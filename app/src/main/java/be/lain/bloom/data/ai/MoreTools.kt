@@ -71,6 +71,8 @@ class MoreTools @Inject constructor(
     private val runs: be.lain.bloom.data.training.RunRepository,
     private val reviews: be.lain.bloom.data.review.ReviewRepository,
     private val reminders: be.lain.bloom.service.Reminders,
+    private val barcodes: PhotoBarcodes,
+    private val cycle: be.lain.bloom.data.cycle.CycleRepository,
     private val clock: Clock,
 ) {
     /** Photos the coach asked to see, handed to the engine to attach to the next request. */
@@ -81,9 +83,40 @@ class MoreTools @Inject constructor(
     val names = setOf(
         "create_recipe", "get_workout_details", "log_workout", "log_run", "log_measurements", "get_progress_photos",
         "view_progress_photos", "get_nutrition_averages", "propose_goal_change", "copy_meal", "schedule_reminder",
+        "read_barcode_from_photo", "get_cycle", "log_period", "log_cycle_symptoms",
     )
 
     fun definitions(): List<JsonObject> = listOf(
+        DeepSeek.tool(
+            "get_cycle",
+            "Menstrual cycle tracking: cycle day, phase, expected next period, whether water retention is likely now, " +
+                "average lengths and recent symptoms. Use it before reading too much into a weight jump or plateau.",
+            buildJsonObject { }, emptyList(),
+        ),
+        DeepSeek.tool(
+            "log_period",
+            "Mark days as period days (or remove them) when the user tells you, e.g. 'my period started yesterday'. Undoable.",
+            buildJsonObject {
+                put("from", DeepSeek.prop("string", "First day, YYYY-MM-DD"))
+                put("to", DeepSeek.prop("string", "Last day, default same as from"))
+                put("period", DeepSeek.prop("boolean", "true to mark as period days, false to remove"))
+                put("flow", DeepSeek.prop("string", "light, medium or heavy (optional)"))
+            }, listOf("from", "period"),
+        ),
+        DeepSeek.tool(
+            "log_cycle_symptoms",
+            "Record symptoms for a day: cramps, bloating, cravings, tired, headache, tender_breasts, low_mood, spotting. Replaces that day's symptoms. Undoable.",
+            buildJsonObject {
+                put("date", DeepSeek.prop("string", "YYYY-MM-DD, default today"))
+                put("symptoms", DeepSeek.prop("string", "Comma-separated keys from the list"))
+            }, listOf("symptoms"),
+        ),
+        DeepSeek.tool(
+            "read_barcode_from_photo",
+            "Scan the user's most recent photo(s) in this chat for a product barcode (EAN/UPC), on the phone. " +
+                "Returns the digits; then use lookup_barcode.",
+            buildJsonObject { }, emptyList(),
+        ),
         DeepSeek.tool(
             "create_recipe",
             "Save a home recipe or regular combo (e.g. a skyr bowl) as one food the user can log with one tap. " +
@@ -234,7 +267,66 @@ class MoreTools @Inject constructor(
         "propose_goal_change" -> proposeGoal(chatId, a, journal)
         "copy_meal" -> copyMeal(chatId, a, journal)
         "schedule_reminder" -> scheduleReminder(chatId, a, journal)
+        "read_barcode_from_photo" -> readBarcode(chatId)
+        "get_cycle" -> cycle.summary(today()).toString()
+        "log_period" -> logPeriod(chatId, a, journal)
+        "log_cycle_symptoms" -> logSymptoms(chatId, a, journal)
         else -> err("Unknown tool $name")
+    }
+
+    // ---------- cycle ----------
+
+    private suspend fun cycleOff(): String? =
+        if (cycle.enabled.first()) null else err("Cycle tracking is off. Ask the user to turn it on in Settings → Cycle first.")
+
+    private suspend fun snapshot(dates: List<LocalDate>) = buildJsonArray {
+        dates.forEach { d ->
+            add(buildJsonObject {
+                put("date", d.toString())
+                cycle.day(d)?.let { e -> put("period", e.period); e.flow?.let { put("flow", it) }; put("symptoms", e.symptoms) }
+            })
+        }
+    }
+
+    private suspend fun logPeriod(chatId: Long, a: JsonObject, journal: Journal): String {
+        cycleOff()?.let { return it }
+        val from = a.date("from") ?: return err("from required")
+        val to = a.date("to") ?: from
+        if (to.isBefore(from) || ChronoUnit.DAYS.between(from, to) > 14) return err("Give a range of at most 15 days")
+        if (from.isAfter(today())) return err("Can't log future days")
+        val on = a["period"]?.jsonPrimitive?.contentOrNull?.toBooleanStrictOrNull() ?: true
+        val flow = when (a.s("flow").lowercase()) { "light" -> 1; "medium" -> 2; "heavy" -> 3; else -> null }
+        val dates = generateSequence(from) { it.plusDays(1) }.takeWhile { !it.isAfter(to) }.toList()
+        val before = snapshot(dates)
+        dates.forEach { cycle.setPeriod(it, on, flow) }
+        journal.add(chatId, AiActionKind.LOG_CYCLE, AiActionStatus.APPLIED,
+            (if (on) "Marked period " else "Removed period ") + if (from == to) "$from" else "$from – $to", buildJsonObject { put("before", before) })
+        return cycle.summary(today()).toString()
+    }
+
+    private suspend fun logSymptoms(chatId: Long, a: JsonObject, journal: Journal): String {
+        cycleOff()?.let { return it }
+        val date = a.date("date") ?: today()
+        val set = be.lain.bloom.data.cycle.Symptom.parse(a.s("symptoms").lowercase().replace(' ', '_').replace(",_", ","))
+        val before = snapshot(listOf(date))
+        cycle.setSymptoms(date, set)
+        journal.add(chatId, AiActionKind.LOG_CYCLE, AiActionStatus.APPLIED,
+            "Symptoms $date: " + set.joinToString { it.label.lowercase() }.ifEmpty { "none" }, buildJsonObject { put("before", before) })
+        return buildJsonObject { put("saved", set.joinToString(",") { it.key }) }.toString()
+    }
+
+    // ---------- barcodes ----------
+
+    private suspend fun readBarcode(chatId: Long): String {
+        val photos = db.chatDao().messages(chatId).lastOrNull { it.role == "user" && !it.images.isNullOrBlank() }
+            ?.images?.split('\n')?.filter { it.isNotBlank() }.orEmpty()
+        if (photos.isEmpty()) return err("There's no photo in this chat yet. Ask the user to send one of the barcode.")
+        val codes = barcodes.codesFor(photos)
+        return buildJsonObject {
+            put("barcodes", buildJsonArray { codes.forEach { add(JsonPrimitive(it)) } })
+            if (codes.isEmpty()) put("tip", "No barcode could be decoded. Read the digits printed under the bars if they're visible, or ask for a sharp, close, well-lit photo of just the barcode.")
+            else put("next", "Call lookup_barcode with these digits.")
+        }.toString()
     }
 
     // ---------- recipes ----------
@@ -595,6 +687,15 @@ class MoreTools @Inject constructor(
             AiActionKind.LOG_RUN -> p["runId"]?.jsonPrimitive?.longOrNull?.let { runs.deleteRun(it) }
             AiActionKind.LOG_MEASUREMENT -> p["measurementId"]?.jsonPrimitive?.longOrNull?.let { body.deleteMeasurement(it) }
             AiActionKind.REMINDER -> p["work"]?.jsonPrimitive?.contentOrNull?.let { reminders.cancelCustom(it) }
+            AiActionKind.LOG_CYCLE -> (p["before"] as? JsonArray)?.forEach { el ->
+                val o = el.jsonObject
+                val date = LocalDate.parse(o["date"]!!.jsonPrimitive.content)
+                val period = o["period"]?.jsonPrimitive?.contentOrNull?.toBooleanStrictOrNull()
+                cycle.restore(date, period?.let {
+                    be.lain.bloom.data.db.CycleDayEntity(date, it, o["flow"]?.jsonPrimitive?.contentOrNull?.toIntOrNull(),
+                        o["symptoms"]?.jsonPrimitive?.contentOrNull.orEmpty(), clock.instant())
+                })
+            }
             else -> Unit
         }
     }

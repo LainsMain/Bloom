@@ -25,6 +25,7 @@ sealed interface Route : NavKey {
     @Serializable data object Settings : Route
     @Serializable data object EditProfile : Route
     @Serializable data object WeeklyReview : Route
+    @Serializable data object Cycle : Route
     @Serializable data class ReviewDetail(val id: Long) : Route
 
     // Food

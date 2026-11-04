@@ -10,7 +10,7 @@ import androidx.room.TypeConverters
  * Never fall back to destructive migration: this holds the user's only copy of their data.
  */
 @Database(
-    version = 7,
+    version = 8,
     exportSchema = true,
     entities = [
         ProfileEntity::class,
@@ -39,10 +39,11 @@ import androidx.room.TypeConverters
         be.lain.bloom.data.health.HcSessionEntity::class,
         WeeklyReviewEntity::class,
         ProgressPhotoEntity::class,
+        CycleDayEntity::class,
     ],
     autoMigrations = [
         AutoMigration(from = 1, to = 2), AutoMigration(from = 2, to = 3), AutoMigration(from = 3, to = 4),
-        AutoMigration(from = 4, to = 5), AutoMigration(from = 5, to = 6), AutoMigration(from = 6, to = 7),
+        AutoMigration(from = 4, to = 5), AutoMigration(from = 5, to = 6), AutoMigration(from = 6, to = 7), AutoMigration(from = 7, to = 8),
     ],
 )
 @TypeConverters(Converters::class)
@@ -60,4 +61,5 @@ abstract class BloomDatabase : RoomDatabase() {
     abstract fun runDao(): RunDao
     abstract fun healthDao(): be.lain.bloom.data.health.HealthDao
     abstract fun reviewDao(): ReviewDao
+    abstract fun cycleDao(): CycleDao
 }

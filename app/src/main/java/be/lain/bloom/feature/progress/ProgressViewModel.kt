@@ -59,6 +59,7 @@ data class ProgressExtras(
     val reviewDue: Boolean = false,
     val photos: List<be.lain.bloom.data.db.ProgressPhotoEntity> = emptyList(),
     val nextReview: LocalDate? = null,
+    val periodDays: Set<LocalDate> = emptySet(),
 )
 
 @HiltViewModel
@@ -72,6 +73,7 @@ class ProgressViewModel @Inject constructor(
     private val engine: be.lain.bloom.data.ai.CoachEngine,
     private val messages: be.lain.bloom.core.AppMessages,
     settings: be.lain.bloom.data.SettingsRepository,
+    cycle: be.lain.bloom.data.cycle.CycleRepository,
     private val clock: Clock,
 ) : ViewModel() {
     private val today0 = LocalDate.now(clock)
@@ -82,8 +84,8 @@ class ProgressViewModel @Inject constructor(
         combine(training.workouts, runs.runs, ::Pair),
         combine(reviews.reviews, reviews.dueOn(today0), ::Pair),
         reviews.photos,
-        combine(profiles.profile, settings.settings, ::Pair),
-    ) { (entries, statuses, plans), (workouts, runList), (reviewList, due), photos, (profile, appSettings) ->
+        combine(profiles.profile, settings.settings, cycle.periodDays, ::Triple),
+    ) { (entries, statuses, plans), (workouts, runList), (reviewList, due), photos, (profile, appSettings, periodDays) ->
         val saved = statuses.associate { it.date to it.status }
         val intake = (13 downTo 0).map { back ->
             val d = today0.minusDays(back.toLong())
@@ -106,7 +108,7 @@ class ProgressViewModel @Inject constructor(
             while (d.isBefore(earliest)) d = d.plusWeeks(1)
             d
         }
-        ProgressExtras(intake, weeks, profile?.strengthDays?.size ?: 0, reviewList, due, photos, next)
+        ProgressExtras(intake, weeks, profile?.strengthDays?.size ?: 0, reviewList, due, photos, next, periodDays)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), ProgressExtras())
 
     fun addPhotos(uris: List<android.net.Uri>) = viewModelScope.launch {

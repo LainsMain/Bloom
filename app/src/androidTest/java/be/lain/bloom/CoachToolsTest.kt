@@ -74,8 +74,8 @@ class CoachToolsTest {
         profiles = ProfileRepository(db, clock)
         val training = TrainingRepository(context, db, settings, clock)
         val runs = RunRepository(context, db, clock)
-        val reviews = ReviewRepository(db, profiles, body, food, training, runs, settings, clock)
-        tools = MoreTools(db, food, body, profiles, training, runs, reviews, Reminders(context, settings, clock), clock)
+        val reviews = ReviewRepository(db, profiles, body, food, training, runs, settings, be.lain.bloom.data.cycle.CycleRepository(db, settings, clock), clock)
+        tools = MoreTools(db, food, body, profiles, training, runs, reviews, Reminders(context, settings, clock), be.lain.bloom.data.ai.PhotoBarcodes(context), be.lain.bloom.data.cycle.CycleRepository(db, settings, clock), clock)
         db.profileDao().upsert(
             ProfileEntity(
                 name = "Test", goal = Goal.LOSE, formula = EnergyFormula.FEMALE, birthYear = 2000, heightCm = 176.0, startWeightKg = 85.0,
@@ -156,6 +156,30 @@ class CoachToolsTest {
         val n = call("get_nutrition_averages", """{"from":"${today.minusDays(89)}","to":"$today"}""")
         assertEquals(2, n["days_logged"]!!.jsonPrimitive.content.toInt())
         assertEquals("$y 500 kcal P20 C0 F0 fib0 unmarked", (n["days"] as kotlinx.serialization.json.JsonArray)[88].jsonPrimitive.content)
+    }
+
+    @Test fun cycleToolsLogReadAndUndo() {
+        val settings = SettingsRepository(context)
+        val wasOn = runBlocking { settings.settings.first().cycleTracking }
+        try {
+            runBlocking { settings.setCycleTracking(false) }
+            assertTrue(call("log_period", """{"from":"$today","period":true}""").containsKey("error"))
+            runBlocking { settings.setCycleTracking(true) }
+            val start = today.minusDays(3)
+            val r = call("log_period", """{"from":"$start","to":"${today.minusDays(1)}","period":true,"flow":"medium"}""")
+            assertEquals(4, r["cycle_day"]!!.jsonPrimitive.content.toInt())
+            assertEquals(3, runBlocking { db.cycleDao().all() }.count { it.period })
+            call("log_cycle_symptoms", """{"symptoms":"cramps, bloating"}""")
+            assertEquals("cramps,bloating", runBlocking { db.cycleDao().get(today) }!!.symptoms)
+            val g = call("get_cycle", "{}")
+            assertTrue(g.toString(), g.toString().contains("cramps"))
+            // Undo the period logging: those days go back to not logged.
+            val logPeriod = runBlocking { db.chatDao().observeActions(chatId).first() }.first { it.kind == AiActionKind.LOG_CYCLE }
+            runBlocking { tools.undo(logPeriod.kind, Json.parseToJsonElement(logPeriod.payload).jsonObject) }
+            assertEquals(0, runBlocking { db.cycleDao().all() }.count { it.period })
+        } finally {
+            runBlocking { settings.setCycleTracking(wasOn) }
+        }
     }
 
     @Test fun goalChangeIsAProposalAndKeepsTheMeasuredBurn() {

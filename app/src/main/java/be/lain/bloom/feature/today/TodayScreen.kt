@@ -117,6 +117,12 @@ fun TodayScreen(navigate: (Route) -> Unit, openTab: (Route) -> Unit, vm: TodayVi
                 if (hc == be.lain.bloom.data.health.HcStatus.CONNECTED) StepsCard(steps, sessions, state.settings.stepGoal)
             }
             item {
+                val cs by vm.cycleState.collectAsStateWithLifecycle()
+                cs?.takeIf { it.enabled }?.let { c ->
+                    CycleCard(c, state.date, onOpen = { navigate(Route.Cycle) }, onPeriod = vm::setPeriodToday)
+                }
+            }
+            item {
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     WeightCard(state, Modifier.weight(1f), onClick = { weightSheet = true }, onOpenProgress = { openTab(Route.Progress) })
                     WaterCard(state, Modifier.weight(1f), onAdd = { vm.addWater(state.settings.waterServingMl) }, onUndo = vm::undoWater)
@@ -230,6 +236,50 @@ private fun ReviewBanner(onStart: () -> Unit) {
                 containerColor = MaterialTheme.colorScheme.tertiary, contentColor = MaterialTheme.colorScheme.onTertiary,
             ),
         ) { Text("Start review") }
+    }
+}
+
+@Composable
+private fun CycleCard(c: be.lain.bloom.data.cycle.CycleState, date: java.time.LocalDate, onOpen: () -> Unit, onPeriod: (Boolean) -> Unit) {
+    val pink = MaterialTheme.dataColors.protein
+    val today = c.today
+    val periodToday = date in c.periodDays
+    BloomCard(Modifier.fillMaxWidth(), onClick = onOpen, contentPadding = 16.dp) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.size(20.dp).clip(MaterialShapes.Flower.toShape()).background(pink))
+            Spacer(Modifier.width(8.dp))
+            Text("Cycle", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
+            today?.let { Text("Day ${it.day}", style = MaterialTheme.typography.labelLarge) }
+        }
+        Spacer(Modifier.height(6.dp))
+        if (today == null) {
+            Text("Log your period so your coach can tell water weight from fat loss.", style = MaterialTheme.typography.bodyMedium)
+        } else {
+            Text(
+                when {
+                    periodToday -> "Period · day ${be.lain.bloom.domain.Cycle.periodLength(c.stats.starts.last(), c.periodDays).coerceAtMost(today.day)}"
+                    today.daysUntilNext < 0 -> "Period ${-today.daysUntilNext} day${if (today.daysUntilNext == -1) "" else "s"} late"
+                    today.daysUntilNext == 0 -> "Period expected today"
+                    today.daysUntilNext == 1 -> (today.phase?.label ?: "Cycle") + " · period expected tomorrow"
+                    else -> (today.phase?.label ?: "Cycle") + " · period in ${today.daysUntilNext} days"
+                },
+                style = MaterialTheme.typography.titleMedium,
+            )
+            if (today.waterRetention) {
+                Text("Water weight is common now, so a higher reading on the scale is expected.", style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+        Spacer(Modifier.height(10.dp))
+        if (periodToday) {
+            androidx.compose.material3.OutlinedButton(onClick = { onPeriod(false) }, contentPadding = PaddingValues(horizontal = 14.dp)) {
+                Text("Not a period day")
+            }
+        } else {
+            FilledTonalButton(onClick = { onPeriod(true) }, contentPadding = PaddingValues(horizontal = 14.dp)) {
+                Text(if (today != null && today.day <= 3 && c.stats.starts.isNotEmpty()) "Period today" else "Period started today")
+            }
+        }
     }
 }
 

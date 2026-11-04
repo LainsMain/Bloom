@@ -41,6 +41,8 @@ object Adaptive {
         /** Expenditure behind the current plan; 0 or less means unknown. */
         val priorExpenditure: Int,
         val reviewDate: LocalDate,
+        /** The week starts or ends on days when period-related water weight is likely. */
+        val cycleSwing: Boolean = false,
     )
 
     data class Result(
@@ -113,6 +115,10 @@ object Adaptive {
                     val settling = if (weeksIn < 3) 0.5 else 1.0
                     confidence = MAX_BLEND * logging * scale * settling
                     if (settling < 1.0) notes += "Your first weeks include water weight, so this week's numbers count for less."
+                    if (input.cycleSwing) {
+                        confidence *= 0.5
+                        notes += "Your period was due or just started at one end of this week. Water weight can hide or exaggerate fat loss for a few days, so this week counts for less."
+                    }
                 }
             }
         }

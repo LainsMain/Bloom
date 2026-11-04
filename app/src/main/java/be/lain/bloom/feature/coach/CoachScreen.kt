@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.foundation.layout.padding
@@ -21,6 +22,7 @@ import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.EditNote
 import androidx.compose.material.icons.rounded.History
+import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialShapes
@@ -63,6 +65,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -81,6 +84,14 @@ sealed interface ChatItem {
     data class Assistant(val m: ChatMessageEntity) : ChatItem { override val key = "a${m.id}" }
     data class Tools(val id: Long, val names: List<String>) : ChatItem { override val key = "t$id" }
     data class Action(val a: AiActionEntity) : ChatItem { override val key = "x${a.id}" }
+}
+
+/** Local day a chat row belongs to (for day separators). */
+fun ChatItem.date(zone: ZoneId): LocalDate? = when (this) {
+    is ChatItem.User -> m.createdAt.atZone(zone).toLocalDate()
+    is ChatItem.Assistant -> m.createdAt.atZone(zone).toLocalDate()
+    is ChatItem.Action -> a.createdAt.atZone(zone).toLocalDate()
+    is ChatItem.Tools -> null
 }
 
 fun buildItems(messages: List<ChatMessageEntity>, actions: List<AiActionEntity>): List<ChatItem> {
@@ -142,6 +153,10 @@ class CoachViewModel @Inject constructor(
     }
 
     fun stop() { chatId.value?.let(engine::cancel) }
+    fun retry() { chatId.value?.let { engine.retry(it) } }
+
+    val title = chatId.flatMapLatest { id -> if (id == null) flowOf(null) else db.chatDao().observeChats(ChatMode.COACH.kind).map { l -> l.firstOrNull { it.id == id }?.title } }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
     fun newChat() { chatId.value = null }
     fun open(id: Long) { chatId.value = id }
     fun deleteChat(id: Long) = viewModelScope.launch {
@@ -170,59 +185,111 @@ fun CoachScreen(vm: CoachViewModel = hiltViewModel()) {
     val hasKey by vm.hasKey.collectAsStateWithLifecycle()
     val attachments by vm.attachments.collectAsStateWithLifecycle()
     val chats by vm.chats.collectAsStateWithLifecycle()
+    val title by vm.title.collectAsStateWithLifecycle()
     var text by rememberSaveable { mutableStateOf("") }
     var history by remember { mutableStateOf(false) }
+    var viewing by remember { mutableStateOf<String?>(null) }
     val list = rememberLazyListState()
     val pickers = rememberPhotoPickers(vm::attach)
     val scope = rememberCoroutineScope()
+    val today = LocalDate.now()
+    val zone = ZoneId.systemDefault()
 
     val imeVisible = androidx.compose.foundation.layout.WindowInsets.isImeVisible
     LaunchedEffect(items.size, run.streaming.length / 80, run.busy, imeVisible) {
         val count = list.layoutInfo.totalItemsCount
         if (count > 0) list.animateScrollToItem(count - 1)
     }
+    val atBottom by remember { androidx.compose.runtime.derivedStateOf { !list.canScrollForward } }
+
+    // The last assistant message of the conversation gets the copy button.
+    val lastAssistant = items.lastOrNull { it is ChatItem.Assistant }?.key
 
     Column(Modifier.fillMaxSize().statusBarsPadding().imePadding()) {
         Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 4.dp, top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             ShapeIcon(MaterialShapes.Sunny, Icons.Rounded.AutoAwesome, size = 40.dp)
             Spacer(Modifier.padding(6.dp))
-            Text("Coach", style = MaterialTheme.typography.headlineMedium, modifier = Modifier.weight(1f))
+            Column(Modifier.weight(1f)) {
+                Text("Coach", style = MaterialTheme.typography.headlineMedium)
+                title?.takeIf { it != "New chat" && items.isNotEmpty() }?.let {
+                    Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+            }
             IconButton(onClick = { history = true }) { Icon(Icons.Rounded.History, "Chat history") }
             IconButton(onClick = vm::newChat) { Icon(Icons.Rounded.EditNote, "New chat") }
         }
-        LazyColumn(
-            state = list,
-            modifier = Modifier.weight(1f).fillMaxWidth(),
-            contentPadding = PaddingValues(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            if (!hasKey) item { ApiKeyCard(vm::saveKey) }
-            if (items.isEmpty() && hasKey) {
-                item {
-                    EmptyState(MaterialShapes.Sunny, Icons.Rounded.AutoAwesome, "Hi! What can I help with?",
-                        "Tell me what you ate (or send a photo) and I'll log it. Ask about your progress, meals, workouts — anything.")
+        Box(Modifier.weight(1f).fillMaxWidth()) {
+            LazyColumn(
+                state = list,
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                if (!hasKey) item { ApiKeyCard(vm::saveKey) }
+                if (items.isEmpty() && hasKey) {
+                    item {
+                        Column(Modifier.fillMaxWidth().padding(vertical = 8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                            ShapeIcon(MaterialShapes.Sunny, Icons.Rounded.AutoAwesome, size = 72.dp)
+                            Spacer(Modifier.height(12.dp))
+                            Text("What can I help with?", style = MaterialTheme.typography.headlineSmall)
+                            Text("Tell me what you ate, send a photo, or ask about your progress.",
+                                style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+                        }
+                    }
+                    item {
+                        StarterCard("Log", listOf(
+                            "I had skyr with blueberries and oats for breakfast",
+                            "Save my usual breakfast as a recipe",
+                            "I walked for 30 minutes this afternoon",
+                        )) { text = it }
+                    }
+                    item {
+                        StarterCard("Ask", listOf(
+                            "How has my protein been this month?",
+                            "Which exercises should I make harder next workout?",
+                            "Why did my weight go up this week?",
+                        )) { text = it }
+                    }
                 }
-                item {
-                    SuggestionChips(
-                        listOf(
-                            "I had 2 slices of toast with peanut butter and a coffee with milk",
-                            "How am I doing this week?",
-                            "High-protein dinner ideas under 500 kcal",
-                            "What should I eat for the rest of today?",
-                        ),
-                    ) { text = it }
+                items.forEachIndexed { i, item ->
+                    val day = item.date(zone)
+                    val prevDay = items.getOrNull(i - 1)?.date(zone)
+                    if (day != null && day != prevDay) {
+                        item(key = "day-$day-${item.key}") { DaySeparator(day.relative(today)) }
+                    }
+                    // A "Coach" label where a reply starts (after the user's message).
+                    val startsReply = item !is ChatItem.User && (i == 0 || items[i - 1] is ChatItem.User)
+                    item(key = item.key) {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            if (startsReply) CoachLabel()
+                            when (item) {
+                                is ChatItem.User -> {
+                                    val imgs = item.m.images?.split('\n')?.filter { it.isNotBlank() }.orEmpty()
+                                    if (isAppNote(item.m.content)) AppNote(item.m.content, imgs) { viewing = it }
+                                    else UserBubble(item.m.content, imgs) { viewing = it }
+                                }
+                                is ChatItem.Assistant -> AssistantBubble(item.m.content, showActions = item.key == lastAssistant && !run.busy)
+                                is ChatItem.Tools -> ToolChips(item.names)
+                                is ChatItem.Action -> ActionCard(item.a, { vm.undo(item.a.id) }, { vm.accept(item.a.id) }, { vm.decline(item.a.id) })
+                            }
+                        }
+                    }
                 }
+                item { RunIndicator(run) }
+                run.error?.let { e -> item { ErrorCard(e, vm::retry) } }
             }
-            items(items, key = { it.key }) { item ->
-                when (item) {
-                    is ChatItem.User -> UserBubble(item.m.content, item.m.images?.split('\n')?.filter { it.isNotBlank() }.orEmpty())
-                    is ChatItem.Assistant -> AssistantBubble(item.m.content)
-                    is ChatItem.Tools -> ToolChips(item.names)
-                    is ChatItem.Action -> ActionCard(item.a, { vm.undo(item.a.id) }, { vm.accept(item.a.id) }, { vm.decline(item.a.id) })
-                }
+            androidx.compose.animation.AnimatedVisibility(
+                visible = !atBottom && items.isNotEmpty(),
+                modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 8.dp),
+                enter = androidx.compose.animation.fadeIn() + androidx.compose.animation.scaleIn(),
+                exit = androidx.compose.animation.fadeOut() + androidx.compose.animation.scaleOut(),
+            ) {
+                androidx.compose.material3.SmallFloatingActionButton(
+                    onClick = { scope.launch { list.animateScrollToItem((list.layoutInfo.totalItemsCount - 1).coerceAtLeast(0)) } },
+                ) { Icon(Icons.Rounded.KeyboardArrowDown, "Jump to latest") }
             }
-            item { RunIndicator(run) }
-            run.error?.let { e -> item { Text(e, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium) } }
         }
         ChatInput(
             text = text, onText = { text = it }, attachments = attachments, onRemoveAttachment = vm::removeAttachment,
@@ -230,6 +297,8 @@ fun CoachScreen(vm: CoachViewModel = hiltViewModel()) {
             placeholder = "Message your coach", modifier = Modifier.padding(start = 4.dp, end = 12.dp, bottom = 8.dp),
         )
     }
+
+    viewing?.let { PhotoViewer(it) { viewing = null } }
 
     if (history) {
         ModalBottomSheet(onDismissRequest = { history = false }) {

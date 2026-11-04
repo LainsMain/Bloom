@@ -54,6 +54,7 @@ class SettingsViewModel @Inject constructor(
     }
 
     // ---- updates ----
+    fun setCycleTracking(on: Boolean) = viewModelScope.launch { settingsRepo.setCycleTracking(on) }
     fun setUpdateCheck(on: Boolean) = viewModelScope.launch { settingsRepo.setUpdateCheck(on) }
 
     // ---- backup ----

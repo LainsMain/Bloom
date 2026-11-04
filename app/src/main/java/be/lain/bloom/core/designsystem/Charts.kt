@@ -60,8 +60,11 @@ fun WeightChart(
     modifier: Modifier = Modifier,
     goalKg: Double? = null,
     projection: List<Pair<LocalDate, Double>> = emptyList(),
+    /** Period days (cycle tracking), drawn as a band under the plot so water-weight bumps line up visibly. */
+    periodDays: Set<LocalDate> = emptySet(),
 ) {
     if (points.isEmpty()) return
+    val periodColor = MaterialTheme.dataColors.protein
     val scheme = MaterialTheme.colorScheme
     val trendColor = scheme.primary
     val dotColor = scheme.secondary
@@ -95,6 +98,7 @@ fun WeightChart(
             LegendKey("Trend", trendColor, line = true)
             if (projection.isNotEmpty()) LegendKey("Projection", trendColor.copy(alpha = 0.6f), line = true)
             if (goalKg != null) LegendKey("Goal", goalColor, line = true)
+            if (periodDays.any { !it.isBefore(points.first().date) }) LegendKey("Period", periodColor)
         }
         Spacer(Modifier.height(12.dp))
         Canvas(
@@ -135,6 +139,24 @@ fun WeightChart(
                 val txt = measurer.measure(if (withYear) d.shortWithYear() else d.short(), labelStyle)
                 val xx = x(d) - if (i == 0) 0f else txt.size.width.toFloat()
                 drawText(txt, topLeft = Offset(xx.coerceAtLeast(left), size.height - txt.size.height))
+            }
+
+            // Period band just above the date labels: one solid bar per run of consecutive days.
+            val dayW = (w / days).toFloat()
+            val visible = periodDays.filter { !it.isBefore(start) && !it.isAfter(end) }.sorted()
+            var runStart: LocalDate? = null
+            visible.forEachIndexed { i, d ->
+                if (runStart == null) runStart = d
+                val next = visible.getOrNull(i + 1)
+                if (next == null || ChronoUnit.DAYS.between(d, next) > 1) {
+                    val x0 = x(runStart!!) - dayW / 2
+                    val x1 = x(d) + dayW / 2
+                    drawRoundRect(
+                        periodColor, topLeft = Offset(x0, top + h + 2.dp.toPx()),
+                        size = Size(max(x1 - x0, 3.dp.toPx()), 4.dp.toPx()), cornerRadius = CornerRadius(2.dp.toPx()),
+                    )
+                    runStart = null
+                }
             }
 
             // Goal reference

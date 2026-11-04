@@ -51,6 +51,8 @@ data class AppSettings(
     /** A release the user chose to skip. */
     val skippedVersion: String? = null,
     val lastBackupAt: Long? = null,
+    /** Period tracking, so the coach and weekly review can tell water weight from fat loss. */
+    val cycleTracking: Boolean = false,
 )
 
 enum class Reminder(val label: String, val description: String) {
@@ -95,6 +97,7 @@ class SettingsRepository @Inject constructor(@ApplicationContext private val con
         val updateCheck = booleanPreferencesKey("update_check")
         val skippedVersion = stringPreferencesKey("skipped_version")
         val lastBackup = androidx.datastore.preferences.core.longPreferencesKey("last_backup_at")
+        val cycle = booleanPreferencesKey("cycle_tracking")
         fun on(r: Reminder) = booleanPreferencesKey("reminder_${r.name.lowercase()}")
         fun time(r: Reminder) = intPreferencesKey("reminder_${r.name.lowercase()}_time")
     }
@@ -126,6 +129,7 @@ class SettingsRepository @Inject constructor(@ApplicationContext private val con
         updateCheck = this[Keys.updateCheck] ?: true,
         skippedVersion = this[Keys.skippedVersion],
         lastBackupAt = this[Keys.lastBackup],
+        cycleTracking = this[Keys.cycle] ?: false,
     )
 
     suspend fun setThemeMode(mode: ThemeMode) = context.dataStore.edit { it[Keys.theme] = mode.name }
@@ -145,6 +149,7 @@ class SettingsRepository @Inject constructor(@ApplicationContext private val con
     suspend fun setAppLock(on: Boolean) = context.dataStore.edit { it[Keys.appLock] = on }
     suspend fun setUpdateCheck(on: Boolean) = context.dataStore.edit { it[Keys.updateCheck] = on }
     suspend fun setSkippedVersion(v: String?) = context.dataStore.edit { if (v == null) it.remove(Keys.skippedVersion) else it[Keys.skippedVersion] = v }
+    suspend fun setCycleTracking(on: Boolean) = context.dataStore.edit { it[Keys.cycle] = on }
     suspend fun setLastBackup(at: Long) = context.dataStore.edit { it[Keys.lastBackup] = at }
     suspend fun setWaterServing(ml: Int) = context.dataStore.edit { it[Keys.waterServing] = ml.coerceIn(50, 1000) }
 }
