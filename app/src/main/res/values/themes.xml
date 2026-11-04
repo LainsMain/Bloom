@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.Bloom" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">@color/splash_bg</item>
+    </style>
+    <color name="splash_bg">#FFF8F7</color>
+    <color name="ic_bg">#F6D7E0</color>
+    <color name="ic_fg">#8C3C5C</color>
+</resources>
