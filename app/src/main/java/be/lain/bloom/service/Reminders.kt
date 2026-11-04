@@ -24,6 +24,7 @@ import be.lain.bloom.data.BodyRepository
 import be.lain.bloom.data.ProfileRepository
 import be.lain.bloom.data.Reminder
 import be.lain.bloom.data.SettingsRepository
+import be.lain.bloom.data.activeOn
 import be.lain.bloom.data.enabled
 import be.lain.bloom.data.food.FoodRepository
 import be.lain.bloom.data.review.ReviewRepository
@@ -220,8 +221,14 @@ class ReminderWorker @AssistedInject constructor(
             Reminder.MEALS -> {
                 if (food.dayStatuses(today, today).firstOrNull()?.status == DayStatus.COMPLETE) return null
                 val entries = food.range(today, today)
-                if (entries.isEmpty()) "Nothing logged today yet" to "Add what you ate today. Even a rough log helps your weekly review."
-                else "Anything else to log?" to "Add any snacks or drinks, then mark today complete in your diary."
+                if (entries.isEmpty()) return "Nothing logged today yet" to "Add what you ate today. Even a rough log helps your weekly review."
+                val protein = entries.sumOf { it.nutrients.protein ?: 0.0 }
+                val target = profiles.plans.first().activeOn(today)?.targets?.proteinG
+                val short = target?.let { it - protein }?.takeIf { it >= 20 }
+                "Anything else to log?" to (
+                    "Add any snacks or drinks, then mark today complete in your diary." +
+                        (short?.let { " You're about ${it.toInt()} g short on protein: a skyr or a couple of eggs would do it." } ?: "")
+                    )
             }
             Reminder.TRAINING -> when (profile.trainingOn(today.dayOfWeek)) {
                 TrainingKind.STRENGTH -> {

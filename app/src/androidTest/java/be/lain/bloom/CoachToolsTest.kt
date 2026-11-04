@@ -74,7 +74,7 @@ class CoachToolsTest {
         profiles = ProfileRepository(db, clock)
         val training = TrainingRepository(context, db, settings, clock)
         val runs = RunRepository(context, db, clock)
-        val reviews = ReviewRepository(db, profiles, body, food, training, runs, settings, be.lain.bloom.data.cycle.CycleRepository(db, settings, clock), clock)
+        val reviews = ReviewRepository(db, profiles, body, food, training, runs, settings, be.lain.bloom.data.cycle.CycleRepository(db, settings, clock), be.lain.bloom.data.review.DietBreaks(db, settings, profiles, clock), clock)
         tools = MoreTools(db, food, body, profiles, training, runs, reviews, Reminders(context, settings, clock), be.lain.bloom.data.ai.PhotoBarcodes(context), be.lain.bloom.data.cycle.CycleRepository(db, settings, clock), clock)
         db.profileDao().upsert(
             ProfileEntity(

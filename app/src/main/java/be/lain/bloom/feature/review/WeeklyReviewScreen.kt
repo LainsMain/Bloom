@@ -135,7 +135,7 @@ fun WeeklyReviewScreen(onClose: () -> Unit, vm: WeeklyReviewViewModel = hiltView
                     ReviewStep.WEEK -> WeekStep(week, ui)
                     ReviewStep.DAYS -> DaysStep(week, ui, vm::setStatus)
                     ReviewStep.CHECKIN -> CheckInStep(week, ui, vm)
-                    ReviewStep.TARGET -> ui.result?.let { TargetStep(it, ui) }
+                    ReviewStep.TARGET -> ui.result?.let { TargetStep(it, ui, onTakeBreak = { vm.decide(true, takeBreak = true) }) }
                     ReviewStep.COACH -> CoachStep(ui, vm)
                 }
                 Spacer(Modifier.height(8.dp))
@@ -346,7 +346,7 @@ private fun Scale(label: String, hint: String, value: Int?, onSet: (Int?) -> Uni
 // ---------- Step 4: the engine's numbers ----------
 
 @Composable
-private fun ColumnScope.TargetStep(r: Adaptive.Result, ui: ReviewUi) {
+private fun ColumnScope.TargetStep(r: Adaptive.Result, ui: ReviewUi, onTakeBreak: () -> Unit) {
     val c = MaterialTheme.dataColors
     BloomCard(Modifier.fillMaxWidth(), color = MaterialTheme.colorScheme.primaryContainer) {
         Text(
@@ -394,11 +394,43 @@ private fun ColumnScope.TargetStep(r: Adaptive.Result, ui: ReviewUi) {
             Text(n, style = MaterialTheme.typography.bodyMedium)
         }
     }
+    ui.dietBreak?.let { b -> DietBreakCard(b, ui, onTakeBreak) }
     if (ui.effective != null && r.change != 0) {
         Text(
             if (ui.effective == ui.week?.reviewDate) "If you accept, the new target starts today." else "If you accept, the new target starts tomorrow, since you've already logged food today.",
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
+    }
+}
+
+@Composable
+private fun DietBreakCard(b: Adaptive.DietBreak, ui: ReviewUi, onTake: () -> Unit) {
+    val start = ui.effective ?: ui.week?.reviewDate ?: return
+    val end = start.plusDays(b.days.toLong() - 1)
+    BloomCard(Modifier.fillMaxWidth(), color = MaterialTheme.colorScheme.tertiaryContainer) {
+        val on = MaterialTheme.colorScheme.onTertiaryContainer
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            ShapeIcon(MaterialShapes.Puffy, Icons.Rounded.EventNote, size = 40.dp,
+                container = MaterialTheme.colorScheme.tertiary, content = MaterialTheme.colorScheme.onTertiary)
+            Spacer(Modifier.width(12.dp))
+            Text("Time for a diet break?", style = MaterialTheme.typography.titleMedium, color = on)
+        }
+        Spacer(Modifier.height(8.dp))
+        b.why.forEach { Text("• $it", style = MaterialTheme.typography.bodyMedium, color = on) }
+        Spacer(Modifier.height(8.dp))
+        Text(
+            "For ${b.days / 7} weeks you'd eat at maintenance, about ${b.maintenanceKcal.fmt()} kcal with ${b.targets.proteinG} g protein. " +
+                "Fat loss pauses, but energy, hunger and motivation usually recover, and the weeks after often go better. " +
+                "Expect up to a kilo back on the scale in the first days: that's water and stored carbs, not fat. " +
+                "Bloom switches you back to your plan on ${end.short()}, or you can end it early on Today.",
+            style = MaterialTheme.typography.bodyMedium, color = on,
+        )
+        Spacer(Modifier.height(12.dp))
+        FilledTonalButton(onClick = onTake, enabled = !ui.busy, modifier = Modifier.fillMaxWidth()) {
+            Text("Take a ${b.days / 7}-week break at ${b.maintenanceKcal.fmt()} kcal")
+        }
+        Text("Or carry on as normal with the buttons below.", style = MaterialTheme.typography.bodySmall, color = on,
+            modifier = Modifier.padding(top = 6.dp))
     }
 }
 
@@ -433,8 +465,9 @@ private fun ColumnScope.CoachStep(ui: ReviewUi, vm: WeeklyReviewViewModel) {
         Icon(Icons.Rounded.CheckCircle, null, tint = MaterialTheme.colorScheme.primary)
         Spacer(Modifier.width(8.dp))
         Text(
-            when (ui.accepted) {
-                true -> if (ui.result?.change == 0) "Review saved." else "Review saved. New target: ${ui.result?.proposedKcal?.fmt()} kcal."
+            when {
+                ui.tookBreak -> "Review saved. Diet break: about ${ui.dietBreak?.maintenanceKcal?.fmt()} kcal a day for ${(ui.dietBreak?.days ?: 14) / 7} weeks."
+                ui.accepted == true -> if (ui.result?.change == 0) "Review saved." else "Review saved. New target: ${ui.result?.proposedKcal?.fmt()} kcal."
                 else -> "Review saved. You're keeping ${ui.result?.currentKcal?.fmt()} kcal."
             },
             style = MaterialTheme.typography.bodyLarge,

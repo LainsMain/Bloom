@@ -81,7 +81,10 @@ class RootViewModel @Inject constructor(
     val messages: AppMessages,
     val deepLinks: be.lain.bloom.service.DeepLinks,
     val updater: be.lain.bloom.data.update.Updater,
+    private val milestones: be.lain.bloom.data.MilestoneWatcher,
 ) : ViewModel() {
+    val celebration = milestones.pending.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+    fun dismissCelebration() = viewModelScope.launch { milestones.dismiss() }
     val state: StateFlow<RootState> = profiles.profile
         .map { if (it == null) RootState.ONBOARDING else RootState.READY }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), RootState.LOADING)
@@ -98,6 +101,8 @@ fun BloomRoot(vm: RootViewModel = hiltViewModel()) {
             RootState.READY -> {
                 MainShell(vm.messages, vm.deepLinks)
                 UpdateDialog(vm.updater)
+                val celebrate by vm.celebration.collectAsStateWithLifecycle()
+                celebrate?.let { Celebration(it, onDone = vm::dismissCelebration) }
             }
         }
     }
@@ -216,6 +221,8 @@ fun MainShell(messages: AppMessages, deepLinks: be.lain.bloom.service.DeepLinks)
                 entry<Route.QuickLog> { key -> QuickLogScreen(key, onBack = back) }
                 entry<Route.Settings> { SettingsScreen(onBack = back, navigate = navigate) }
                 entry<Route.EditProfile> { EditProfileScreen(onBack = back) }
+                entry<Route.PhotoCompare> { be.lain.bloom.feature.progress.PhotoCompareScreen(onBack = back) }
+                entry<Route.ProgressCamera> { be.lain.bloom.feature.progress.ProgressCameraScreen(onBack = back) }
                 entry<Route.Cycle> { be.lain.bloom.feature.cycle.CycleScreen(onBack = back) }
                 entry<Route.WeeklyReview> { be.lain.bloom.feature.review.WeeklyReviewScreen(onClose = back) }
                 entry<Route.ReviewDetail> { key -> be.lain.bloom.feature.review.ReviewDetailScreen(key, onBack = back) }

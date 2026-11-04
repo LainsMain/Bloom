@@ -80,6 +80,7 @@ fun TodayScreen(navigate: (Route) -> Unit, openTab: (Route) -> Unit, vm: TodayVi
     val haptics = LocalHapticFeedback.current
     LifecycleResumeEffect(Unit) {
         vm.refreshDate()
+        vm.loadProteinIdeas()
         onPauseOrDispose { }
     }
     BackHandler(enabled = fabOpen) { fabOpen = false }
@@ -103,7 +104,22 @@ fun TodayScreen(navigate: (Route) -> Unit, openTab: (Route) -> Unit, vm: TodayVi
                 val due by vm.reviewDue.collectAsStateWithLifecycle()
                 if (due) ReviewBanner(onStart = { navigate(Route.WeeklyReview) })
             }
+            item {
+                val brk by vm.dietBreak.collectAsStateWithLifecycle()
+                brk?.takeIf { !it.today.isAfter(it.end) }?.let { DietBreakCard(it, state.targets?.kcal, onEnd = vm::endDietBreak) }
+            }
             item { EnergyCard(state, onClick = { openTab(Route.Food) }) }
+            item {
+                val ideas by vm.proteinIdeas.collectAsStateWithLifecycle()
+                val t = state.targets
+                val left = (t?.proteinG ?: 0) - (state.protein ?: 0.0)
+                // From late morning, once there's a real gap; never nag first thing.
+                if (t != null && left >= 15 && java.time.LocalTime.now().hour >= 11) {
+                    ProteinCard(state.protein ?: 0.0, t.proteinG, ideas, onAdd = vm::logProtein, onMore = {
+                        navigate(Route.FoodSearch(state.date.toEpochDay(), vm.defaultMeal()))
+                    })
+                }
+            }
             item {
                 val program by vm.program.collectAsStateWithLifecycle()
                 val runPlan by vm.runPlan.collectAsStateWithLifecycle()
@@ -213,6 +229,72 @@ private fun Header(greeting: String, name: String, date: String, onAvatar: () ->
                 )
             }
         }
+    }
+}
+
+@Composable
+private fun ProteinCard(eaten: Double, target: Int, ideas: List<be.lain.bloom.data.food.ProteinIdea>, onAdd: (be.lain.bloom.data.food.ProteinIdea) -> Unit, onMore: () -> Unit) {
+    val left = (target - eaten).coerceAtLeast(0.0)
+    val color = MaterialTheme.dataColors.protein
+    BloomCard(Modifier.fillMaxWidth(), contentPadding = 16.dp) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.size(12.dp).clip(MaterialShapes.Circle.toShape()).background(color))
+            Spacer(Modifier.width(8.dp))
+            Text("Protein boost", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
+            Text("${eaten.toInt()} / $target g", style = MaterialTheme.typography.labelLarge)
+        }
+        Spacer(Modifier.height(4.dp))
+        Text("About ${left.toInt()} g to go today", style = MaterialTheme.typography.titleMedium)
+        Text("Protein keeps you full and protects muscle while you lose fat.", style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Spacer(Modifier.height(10.dp))
+        ideas.forEach { idea ->
+            Row(Modifier.fillMaxWidth().padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text(idea.name, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                    Text("${idea.portionLabel} · ${idea.protein.toInt()} g protein · ${idea.kcal.toInt()} kcal",
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                FilledTonalButton(onClick = { onAdd(idea) }, contentPadding = PaddingValues(horizontal = 12.dp)) {
+                    Icon(Icons.Rounded.Add, null, Modifier.size(18.dp)); Text("Add")
+                }
+            }
+        }
+        androidx.compose.material3.TextButton(onClick = onMore) { Text("Find something else") }
+    }
+}
+
+@Composable
+private fun DietBreakCard(b: be.lain.bloom.data.review.DietBreakState, kcal: Int?, onEnd: () -> Unit) {
+    var confirm by rememberSaveable { mutableStateOf(false) }
+    BloomCard(Modifier.fillMaxWidth(), color = MaterialTheme.colorScheme.tertiaryContainer, contentPadding = 16.dp) {
+        val on = MaterialTheme.colorScheme.onTertiaryContainer
+        if (b.upcoming) {
+            Text("Diet break starts tomorrow", style = MaterialTheme.typography.titleMedium, color = on)
+            Text(
+                "Today stays on your normal target. From tomorrow you eat at maintenance for ${b.length / 7} weeks. " +
+                    "A little weight back on the scale is water and stored carbs, not fat.",
+                style = MaterialTheme.typography.bodyMedium, color = on,
+            )
+        } else {
+            Text("Diet break · day ${b.day} of ${b.length}", style = MaterialTheme.typography.titleMedium, color = on)
+            Text(
+                (kcal?.let { "Eat around ${it.fmt()} kcal a day, your maintenance. " } ?: "") +
+                    "A little weight back on the scale is water and stored carbs, not fat. " +
+                    if (b.daysLeft <= 1) "Back to your plan tomorrow." else "Back to your plan in ${b.daysLeft} days.",
+                style = MaterialTheme.typography.bodyMedium, color = on,
+            )
+        }
+        androidx.compose.material3.TextButton(onClick = { confirm = true }) { Text(if (b.upcoming) "Cancel break" else "End break early") }
+    }
+    if (confirm) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { confirm = false },
+            title = { Text(if (b.upcoming) "Cancel your diet break?" else "End your diet break?") },
+            text = { Text(if (b.upcoming) "You'll stay on your fat-loss target." else "Your fat-loss target comes back from today.") },
+            confirmButton = { androidx.compose.material3.TextButton(onClick = { confirm = false; onEnd() }) { Text("End break") } },
+            dismissButton = { androidx.compose.material3.TextButton(onClick = { confirm = false }) { Text("Keep going") } },
+        )
     }
 }
 

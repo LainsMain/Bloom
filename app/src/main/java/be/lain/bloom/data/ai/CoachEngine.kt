@@ -72,6 +72,7 @@ class CoachEngine @Inject constructor(
     private val more: dagger.Lazy<MoreTools>,
     private val barcodes: PhotoBarcodes,
     private val cycle: be.lain.bloom.data.cycle.CycleRepository,
+    private val dietBreaks: be.lain.bloom.data.review.DietBreaks,
     private val food: FoodRepository,
     private val body: BodyRepository,
     private val profiles: ProfileRepository,
@@ -347,6 +348,9 @@ class CoachEngine @Inject constructor(
             if (entries.isNotEmpty()) {
                 appendLine("Today's diary:")
                 entries.forEach { e -> appendLine("- [id ${e.id}] ${e.meal.label}: ${e.name} ${amountShort(e.grams, e.amount, e.unit)} ${(e.nutrients.kcal ?: 0.0).roundToInt()} kcal") }
+            }
+            dietBreaks.current()?.let { b ->
+                appendLine("On a diet break (eating at maintenance): day ${b.day} of ${b.length}, back to the fat-loss plan on ${b.end.plusDays(1)}. Some scale increase now is water/glycogen.")
             }
             if (cycle.enabled.first()) {
                 val c = cycle.summary(today)

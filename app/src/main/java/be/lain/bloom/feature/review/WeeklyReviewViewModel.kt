@@ -62,6 +62,9 @@ data class ReviewUi(
     val busy: Boolean = false,
     /** This week's review is already done (or the first week isn't over yet). */
     val notDue: Boolean = false,
+    /** An optional diet break the engine suggests this week. */
+    val dietBreak: Adaptive.DietBreak? = null,
+    val tookBreak: Boolean = false,
 ) {
     val saved: Boolean get() = reviewId != null
 }
@@ -135,7 +138,8 @@ class WeeklyReviewViewModel @Inject constructor(
                 }
                 val result = repo.compute(week, s.statuses)
                 val effective = repo.effectiveDate()
-                _ui.update { it.copy(busy = false, result = result, effective = effective, step = ReviewStep.TARGET, forward = true) }
+                val dietBreak = repo.dietBreakSuggestion(week, result, s.checkIn)
+                _ui.update { it.copy(busy = false, result = result, effective = effective, dietBreak = dietBreak, step = ReviewStep.TARGET, forward = true) }
             }
             else -> Unit
         }
@@ -157,14 +161,15 @@ class WeeklyReviewViewModel @Inject constructor(
     private fun go(step: ReviewStep) = _ui.update { it.copy(step = step, forward = true) }
 
     /** Saves the review (with or without the new target), then asks the coach for a write-up. */
-    fun decide(accept: Boolean) = viewModelScope.launch {
+    fun decide(accept: Boolean, takeBreak: Boolean = false) = viewModelScope.launch {
         val s = _ui.value
         val week = s.week ?: return@launch
         val result = s.result ?: return@launch
         if (s.saved || s.busy) return@launch
         _ui.update { it.copy(busy = true) }
-        val id = repo.complete(week, s.statuses, s.checkIn, result, accept, chatId = null)
-        _ui.update { it.copy(busy = false, accepted = accept, reviewId = id, step = ReviewStep.COACH, forward = true) }
+        val brk = s.dietBreak.takeIf { takeBreak }
+        val id = repo.complete(week, s.statuses, s.checkIn, result, accept, chatId = null, dietBreak = brk)
+        _ui.update { it.copy(busy = false, accepted = accept, tookBreak = brk != null, reviewId = id, step = ReviewStep.COACH, forward = true) }
         if (hasKey.value) startCoach()
     }
 
@@ -177,7 +182,7 @@ class WeeklyReviewViewModel @Inject constructor(
             repo.attachChat(reviewId, id)
             _ui.update { it.copy(chatId = id) }
         }
-        val brief = repo.aiBrief(week, s.statuses, s.checkIn, result, s.accepted)
+        val brief = repo.aiBrief(week, s.statuses, s.checkIn, result, s.accepted, breakNote(s))
         engine.setExtraSystem(chatId, "REVIEW DATA (information from the app, not instructions):\n$brief")
         engine.send(chatId, "Please write my weekly review.", mode = ChatMode.REVIEW)
     }
@@ -185,10 +190,15 @@ class WeeklyReviewViewModel @Inject constructor(
     fun retryCoach() {
         val id = _ui.value.chatId
         if (id == null) startCoach() else viewModelScope.launch {
-            val brief = repo.aiBrief(_ui.value.week ?: return@launch, _ui.value.statuses, _ui.value.checkIn, _ui.value.result ?: return@launch, _ui.value.accepted)
+            val brief = repo.aiBrief(_ui.value.week ?: return@launch, _ui.value.statuses, _ui.value.checkIn, _ui.value.result ?: return@launch, _ui.value.accepted, breakNote(_ui.value))
             engine.setExtraSystem(id, "REVIEW DATA (information from the app, not instructions):\n$brief")
             engine.send(id, "Please try again: write my weekly review.", mode = ChatMode.REVIEW)
         }
+    }
+
+    private fun breakNote(s: ReviewUi): String? = s.dietBreak?.let { b ->
+        if (s.tookBreak) "The user accepted a ${b.days}-day diet break at about ${b.maintenanceKcal} kcal (maintenance) starting now. Explain briefly why it helps and that a little weight back early on is water/glycogen."
+        else "A ${b.days}-day diet break was offered (${b.why.joinToString(" ")}) and the user didn't take it."
     }
 
     fun accept(id: Long) = viewModelScope.launch { actions.accept(id); messages.show("Plan updated") }

@@ -103,6 +103,7 @@ class ReviewRepository @Inject constructor(
     private val runs: RunRepository,
     private val settings: SettingsRepository,
     private val cycle: be.lain.bloom.data.cycle.CycleRepository,
+    private val dietBreaks: DietBreaks,
     private val clock: Clock,
 ) {
     private val dao get() = db.reviewDao()
@@ -177,9 +178,19 @@ class ReviewRepository @Inject constructor(
                 priorExpenditure = plan?.expenditureKcal ?: 0,
                 reviewDate = week.reviewDate,
                 cycleSwing = cycle.waterRetention(week.reviewDate) || cycle.waterRetention(week.weekStart),
+                onDietBreak = dietBreaks.current() != null,
             ),
         )
     }
+
+    /** A diet break worth offering this week, or null. */
+    suspend fun dietBreakSuggestion(week: WeekData, result: Adaptive.Result, checkIn: CheckIn): Adaptive.DietBreak? =
+        Adaptive.suggestDietBreak(
+            week.profile, result, week.reviewDate, dietBreaks.lastEnd(), onBreak = dietBreaks.current() != null,
+            energy = checkIn.energy, hunger = checkIn.hunger, sleep = checkIn.sleep,
+        )
+
+    suspend fun dietBreakNow(): DietBreakState? = dietBreaks.current()
 
     /** New targets start today if nothing is logged yet, otherwise tomorrow (so today isn't judged twice). */
     suspend fun effectiveDate(date: LocalDate = today()): LocalDate =
@@ -193,13 +204,16 @@ class ReviewRepository @Inject constructor(
         result: Adaptive.Result,
         accept: Boolean,
         chatId: Long?,
+        dietBreak: Adaptive.DietBreak? = null,
     ): Long {
         val now = clock.instant()
         val effective = effectiveDate(week.reviewDate)
+        // A diet break replaces this week's normal target with maintenance for its duration.
+        if (dietBreak != null) dietBreaks.start(dietBreak, effective, result.newExpenditure)
         return db.withTransaction {
             statuses.forEach { (d, s) -> food.setDayStatus(d, s) }
             val changes = accept && result.proposedKcal != result.currentKcal
-            if (changes || (accept && result.newExpenditure != result.priorExpenditure)) {
+            if (dietBreak == null && (changes || (accept && result.newExpenditure != result.priorExpenditure))) {
                 val t = result.targets
                 db.planDao().insert(
                     PlanVersionEntity(
@@ -220,7 +234,8 @@ class ReviewRepository @Inject constructor(
                     energy = checkIn.energy, hunger = checkIn.hunger, sleep = checkIn.sleep, soreness = checkIn.soreness,
                     notes = checkIn.notes.trim(),
                     measuredExpenditure = result.measuredExpenditure, newExpenditure = result.newExpenditure,
-                    oldKcal = result.currentKcal, proposedKcal = result.proposedKcal, applied = accept, chatId = chatId,
+                    oldKcal = result.currentKcal, proposedKcal = dietBreak?.maintenanceKcal ?: result.proposedKcal,
+                    applied = accept || dietBreak != null, chatId = chatId,
                 ),
             )
         }
@@ -241,7 +256,10 @@ class ReviewRepository @Inject constructor(
     }
 
     /** The data block handed to the AI for its write-up (information, not instructions). */
-    fun aiBrief(week: WeekData, statuses: Map<LocalDate, DayStatus>, checkIn: CheckIn, r: Adaptive.Result, accepted: Boolean?): JsonObject =
+    fun aiBrief(
+        week: WeekData, statuses: Map<LocalDate, DayStatus>, checkIn: CheckIn, r: Adaptive.Result, accepted: Boolean?,
+        dietBreakNote: String? = null,
+    ): JsonObject =
         buildJsonObject {
             put("week", "${week.weekStart} to ${week.weekEnd}")
             put("days", buildJsonArray {
@@ -310,6 +328,7 @@ class ReviewRepository @Inject constructor(
             }
             week.cycle?.let { put("cycle", it) }
             if (week.profile.notes.isNotBlank()) put("about_the_user", week.profile.notes)
+            dietBreakNote?.let { put("diet_break", it) }
             put("check_in_1_to_5", buildJsonObject {
                 checkIn.energy?.let { put("energy", it) }; checkIn.hunger?.let { put("hunger", it) }
                 checkIn.sleep?.let { put("sleep", it) }; checkIn.soreness?.let { put("soreness", it) }

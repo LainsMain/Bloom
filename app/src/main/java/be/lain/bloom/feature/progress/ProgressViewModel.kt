@@ -74,8 +74,10 @@ class ProgressViewModel @Inject constructor(
     private val messages: be.lain.bloom.core.AppMessages,
     settings: be.lain.bloom.data.SettingsRepository,
     cycle: be.lain.bloom.data.cycle.CycleRepository,
+    milestoneWatcher: be.lain.bloom.data.MilestoneWatcher,
     private val clock: Clock,
 ) : ViewModel() {
+    val milestones = milestoneWatcher.state.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
     private val today0 = LocalDate.now(clock)
 
     /** Intake (last 14 days), training per week (last 8 weeks), reviews and photos. */

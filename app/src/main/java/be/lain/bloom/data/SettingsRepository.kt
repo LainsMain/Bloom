@@ -56,6 +56,13 @@ data class AppSettings(
     val lastBackupAt: Long? = null,
     /** Period tracking, so the coach and weekly review can tell water weight from fat loss. */
     val cycleTracking: Boolean = false,
+    /** Diet break (eating at maintenance): first and last day, as epoch days; null = not on a break. */
+    val dietBreakStart: Long? = null,
+    val dietBreakEnd: Long? = null,
+    /** When the last break finished, so the next one isn't suggested too soon. */
+    val lastDietBreakEnd: Long? = null,
+    /** Milestone ids already celebrated (each fires once). */
+    val celebratedMilestones: Set<String> = emptySet(),
 )
 
 enum class Reminder(val label: String, val description: String) {
@@ -107,6 +114,10 @@ class SettingsRepository @Inject constructor(@ApplicationContext private val con
         val skippedVersion = stringPreferencesKey("skipped_version")
         val lastBackup = androidx.datastore.preferences.core.longPreferencesKey("last_backup_at")
         val cycle = booleanPreferencesKey("cycle_tracking")
+        val breakStart = androidx.datastore.preferences.core.longPreferencesKey("diet_break_start")
+        val breakEnd = androidx.datastore.preferences.core.longPreferencesKey("diet_break_end")
+        val lastBreakEnd = androidx.datastore.preferences.core.longPreferencesKey("last_diet_break_end")
+        val celebrated = androidx.datastore.preferences.core.stringSetPreferencesKey("celebrated_milestones")
         fun on(r: Reminder) = booleanPreferencesKey("reminder_${r.name.lowercase()}")
         fun time(r: Reminder) = intPreferencesKey("reminder_${r.name.lowercase()}_time")
     }
@@ -140,6 +151,10 @@ class SettingsRepository @Inject constructor(@ApplicationContext private val con
         skippedVersion = this[Keys.skippedVersion],
         lastBackupAt = this[Keys.lastBackup],
         cycleTracking = this[Keys.cycle] ?: false,
+        dietBreakStart = this[Keys.breakStart],
+        dietBreakEnd = this[Keys.breakEnd],
+        lastDietBreakEnd = this[Keys.lastBreakEnd],
+        celebratedMilestones = this[Keys.celebrated] ?: emptySet(),
     )
 
     suspend fun setThemeMode(mode: ThemeMode) = context.dataStore.edit { it[Keys.theme] = mode.name }
@@ -173,6 +188,11 @@ class SettingsRepository @Inject constructor(@ApplicationContext private val con
     suspend fun setAppLock(on: Boolean) = context.dataStore.edit { it[Keys.appLock] = on }
     suspend fun setUpdateCheck(on: Boolean) = context.dataStore.edit { it[Keys.updateCheck] = on }
     suspend fun setSkippedVersion(v: String?) = context.dataStore.edit { if (v == null) it.remove(Keys.skippedVersion) else it[Keys.skippedVersion] = v }
+    suspend fun markCelebrated(ids: Set<String>) = context.dataStore.edit { it[Keys.celebrated] = (it[Keys.celebrated] ?: emptySet()) + ids }
+    suspend fun startDietBreak(start: Long, end: Long) = context.dataStore.edit { it[Keys.breakStart] = start; it[Keys.breakEnd] = end }
+    suspend fun finishDietBreak(on: Long) = context.dataStore.edit {
+        it.remove(Keys.breakStart); it.remove(Keys.breakEnd); it[Keys.lastBreakEnd] = on
+    }
     suspend fun setCycleTracking(on: Boolean) = context.dataStore.edit { it[Keys.cycle] = on }
     suspend fun setLastBackup(at: Long) = context.dataStore.edit { it[Keys.lastBackup] = at }
     suspend fun setWaterServing(ml: Int) = context.dataStore.edit { it[Keys.waterServing] = ml.coerceIn(50, 1000) }

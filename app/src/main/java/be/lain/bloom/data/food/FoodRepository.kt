@@ -18,11 +18,30 @@ import be.lain.bloom.domain.Nutrients
 import be.lain.bloom.domain.Recipes
 import be.lain.bloom.domain.Serving
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import java.time.Clock
 import java.time.LocalDate
 import java.time.LocalTime
 import javax.inject.Inject
 import javax.inject.Singleton
+
+/** A quick protein-rich option for the rest of the day. */
+data class ProteinIdea(
+    val name: String,
+    val portionLabel: String,
+    val grams: Double,
+    val amount: Double,
+    val unit: String,
+    val protein: Double,
+    val kcal: Double,
+    /** Saved food, or a basic food from the built-in database to save on first use. */
+    val foodId: Long? = null,
+    val candidate: FoodCandidate? = null,
+)
+
+/** At least ~30% of energy from protein and a worthwhile amount per portion. */
+fun isProteinRich(proteinPer100: Double?, kcalPer100: Double?): Boolean =
+    proteinPer100 != null && kcalPer100 != null && kcalPer100 > 0 && proteinPer100 * 4 / kcalPer100 >= 0.3
 
 data class RecipeDraft(
     val id: Long? = null,
@@ -31,6 +50,9 @@ data class RecipeDraft(
     val cookedWeightG: Double?,
     val ingredients: List<RecipeIngredientEntity>,
 )
+
+/** Basic high-protein foods (built-in database search, typical portion in grams). */
+private val BASICS = listOf("skyr" to 150.0, "cottage cheese" to 150.0, "egg whole cooked" to 100.0, "chicken breast roasted" to 120.0, "tuna canned" to 100.0, "tofu" to 150.0)
 
 sealed interface BarcodeResult {
     data class Found(val food: FoodEntity) : BarcodeResult
@@ -121,6 +143,43 @@ class FoodRepository @Inject constructor(
     fun observeLoggedDays(from: LocalDate, to: LocalDate) = diary.observeLoggedDays(from, to)
 
     /** Amount to use for one-tap logging: last time's amount, else first serving, else 100 g. */
+    /**
+     * Protein-rich foods to suggest: the user's own favourites and recent foods first,
+     * then a few basics from the built-in database.
+     */
+    suspend fun proteinIdeas(limit: Int = 4): List<ProteinIdea> {
+        val own = (foods.observeFavorites().first() + foods.observeRecent(60).first()).distinctBy { it.id }
+            .filter { isProteinRich(it.per100.protein, it.per100.kcal) }
+            .sortedByDescending { it.useCount + if (it.favorite) 5 else 0 }
+            .mapNotNull { f ->
+                val (g, amount, unit) = defaultPortion(f)
+                val n = f.per100.forGrams(g)
+                val protein = n.protein ?: return@mapNotNull null
+                if (protein < 8) return@mapNotNull null
+                ProteinIdea(f.name, portionLabel(amount, unit), g, amount, unit, protein, n.kcal ?: 0.0, foodId = f.id)
+            }
+        if (own.size >= limit) return own.take(limit)
+        val basics = BASICS.mapNotNull { (query, grams) ->
+            runCatching { generic.search(query, 5) }.getOrDefault(emptyList())
+                .firstOrNull { isProteinRich(it.per100.protein, it.per100.kcal) }
+                ?.let { c ->
+                    val n = c.per100.forGrams(grams)
+                    ProteinIdea(c.name, "${grams.toInt()} g", grams, grams, "g", n.protein ?: 0.0, n.kcal ?: 0.0, candidate = c)
+                }
+        }.filter { b -> own.none { it.name.equals(b.name, true) } }
+        return (own + basics).take(limit)
+    }
+
+    private fun portionLabel(amount: Double, unit: String) = when (unit) {
+        "g", "ml" -> "${amount.toInt()} $unit"
+        else -> if (amount == 1.0) unit else "${"%.1f".format(java.util.Locale.UK, amount).removeSuffix(".0")} × $unit"
+    }
+
+    suspend fun logIdea(idea: ProteinIdea, meal: Meal, date: LocalDate): Long {
+        val f = idea.foodId?.let { foods.get(it) } ?: idea.candidate?.let { materialize(it) } ?: error("No food")
+        return log(f, idea.grams, idea.amount, idea.unit, meal, date)
+    }
+
     suspend fun defaultPortion(food: FoodEntity): Triple<Double, Double, String> {
         diary.lastFor(food.id)?.takeIf { it.grams > 0 }?.let { return Triple(it.grams, it.amount, it.unit) }
         preferredServing(food.servings)?.let { return Triple(it.grams, 1.0, it.label) }
