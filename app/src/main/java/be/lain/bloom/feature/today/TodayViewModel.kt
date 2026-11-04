@@ -82,6 +82,8 @@ class TodayViewModel @Inject constructor(
     reviews: be.lain.bloom.data.review.ReviewRepository,
     runs: be.lain.bloom.data.training.RunRepository,
     private val cycle: be.lain.bloom.data.cycle.CycleRepository,
+    private val dietBreaks: be.lain.bloom.data.review.DietBreaks,
+    private val messages: be.lain.bloom.core.AppMessages,
     settings: SettingsRepository,
     private val clock: Clock,
 ) : ViewModel() {
@@ -130,6 +132,15 @@ class TodayViewModel @Inject constructor(
     val steps = date.flatMapLatest { health.dao.observeDay(it) }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
     val otherSessions = date.flatMapLatest { health.dao.observeSessions(it) }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
+    val proteinIdeas = MutableStateFlow<List<be.lain.bloom.data.food.ProteinIdea>>(emptyList())
+    fun loadProteinIdeas() = viewModelScope.launch { proteinIdeas.value = runCatching { food.proteinIdeas() }.getOrDefault(emptyList()) }
+    fun logProtein(idea: be.lain.bloom.data.food.ProteinIdea) = viewModelScope.launch {
+        val id = food.logIdea(idea, food.defaultMeal(), date.value)
+        messages.show("Added ${idea.name} · ${idea.protein.toInt()} g protein", "Undo") { food.deleteEntry(id) }
+    }
+    val dietBreak = date.flatMapLatest { dietBreaks.state }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+    fun endDietBreak() = viewModelScope.launch { dietBreaks.finish("You ended your diet break early: back to your plan") }
+    init { viewModelScope.launch { dietBreaks.finishIfDue() } }
     val cycleState = date.flatMapLatest { cycle.state(it) }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
     fun setPeriodToday(on: Boolean) = viewModelScope.launch { cycle.setPeriod(date.value, on) }
     val runPlan = runs.activePlan.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)

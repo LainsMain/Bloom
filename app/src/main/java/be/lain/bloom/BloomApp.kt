@@ -17,6 +17,7 @@ class BloomApp : Application(), Configuration.Provider {
     @Inject lateinit var reminders: Reminders
     @Inject lateinit var runRepair: be.lain.bloom.data.training.RunRepair
     @Inject @AppScope lateinit var scope: CoroutineScope
+    @Inject lateinit var dietBreaks: be.lain.bloom.data.review.DietBreaks
 
     override val workManagerConfiguration: Configuration
         get() = Configuration.Builder().setWorkerFactory(workerFactory).build()
@@ -26,6 +27,7 @@ class BloomApp : Application(), Configuration.Provider {
         MapLibre.getInstance(this)
         // KEEP: never cancel a reminder the system just started this process to deliver.
         scope.launch { runCatching { reminders.rescheduleAll(androidx.work.ExistingWorkPolicy.KEEP) } }
+        scope.launch { runCatching { dietBreaks.finishIfDue() } }
         scope.launch { runCatching { runRepair.runOnce() } }
     }
 }

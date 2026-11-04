@@ -139,6 +139,10 @@ fun ProgressScreen(navigate: (be.lain.bloom.ui.Route) -> Unit, vm: ProgressViewM
             }
         }
 
+        item {
+            val ms by vm.milestones.collectAsStateWithLifecycle()
+            ms?.let { MilestonesCard(it) }
+        }
         item { IntakeCard(extras.intake) }
         item {
             ReviewsCard(extras.reviews, extras.reviewDue, extras.nextReview, onStart = { navigate(be.lain.bloom.ui.Route.WeeklyReview) },
@@ -164,7 +168,10 @@ fun ProgressScreen(navigate: (be.lain.bloom.ui.Route) -> Unit, vm: ProgressViewM
             item { MeasurementCard(latest, state.measurements.getOrNull(1), state.today, onDelete = { vm.deleteMeasurement(latest.id) }) }
             item { MeasurementTrendCard(state.measurements) }
         }
-        item { PhotosCard(extras.photos, vm::addPhotos, vm::deletePhoto) }
+        item {
+            PhotosCard(extras.photos, vm::addPhotos, vm::deletePhoto,
+                onCamera = { navigate(be.lain.bloom.ui.Route.ProgressCamera) }, onCompare = { navigate(be.lain.bloom.ui.Route.PhotoCompare) })
+        }
         if (extras.weeks.any { it.workouts > 0 || it.runs > 0 }) {
             item { SectionHeader("Training") }
             item { TrainingWeeksCard(extras.weeks, extras.plannedStrength) }

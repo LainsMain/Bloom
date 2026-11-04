@@ -1,6 +1,8 @@
 package be.lain.bloom.feature.progress
 
 import androidx.compose.foundation.Image
+import androidx.compose.material3.toShape
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -165,7 +167,13 @@ fun TrainingWeeksCard(weeks: List<WeekBucket>, plannedStrength: Int) {
 }
 
 @Composable
-fun PhotosCard(photos: List<ProgressPhotoEntity>, onAdd: (List<android.net.Uri>) -> Unit, onDelete: (Long) -> Unit) {
+fun PhotosCard(
+    photos: List<ProgressPhotoEntity>,
+    onAdd: (List<android.net.Uri>) -> Unit,
+    onDelete: (Long) -> Unit,
+    onCamera: () -> Unit,
+    onCompare: () -> Unit,
+) {
     val pickers = rememberPhotoPickers(onAdd)
     var open by remember { mutableStateOf<ProgressPhotoEntity?>(null) }
     BloomCard(Modifier.fillMaxWidth()) {
@@ -187,9 +195,10 @@ fun PhotosCard(photos: List<ProgressPhotoEntity>, onAdd: (List<android.net.Uri>)
             }
         }
         Spacer(Modifier.height(12.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            FilledTonalButton(onClick = pickers.camera) { Icon(Icons.Rounded.AddAPhoto, null); Spacer(Modifier.width(8.dp)); Text("Take photo") }
+        androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            FilledTonalButton(onClick = onCamera) { Icon(Icons.Rounded.AddAPhoto, null); Spacer(Modifier.width(8.dp)); Text("Take photo") }
             OutlinedButton(onClick = pickers.gallery) { Icon(Icons.Rounded.PhotoLibrary, null); Spacer(Modifier.width(8.dp)); Text("Choose") }
+            if (photos.size >= 2) Button(onClick = onCompare) { Text("Compare") }
         }
     }
     open?.let { p ->
@@ -272,5 +281,40 @@ fun ReviewsCard(reviews: List<WeeklyReviewEntity>, due: Boolean, next: java.time
             "Next review: ${next.dayOfWeek.getDisplayName(TextStyle.FULL, Locale.ENGLISH)} ${next.short()}",
             style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
+    }
+}
+
+@Composable
+fun MilestonesCard(state: be.lain.bloom.data.MilestoneState) {
+    if (state.reached.isEmpty() && state.next == null) return
+    val shapes = listOf(
+        androidx.compose.material3.MaterialShapes.Cookie9Sided, androidx.compose.material3.MaterialShapes.Flower,
+        androidx.compose.material3.MaterialShapes.Sunny, androidx.compose.material3.MaterialShapes.Clover4Leaf,
+    )
+    BloomCard(Modifier.fillMaxWidth()) {
+        Text("Milestones", style = MaterialTheme.typography.titleLarge)
+        state.next?.let { (label, left) ->
+            Text("Next: $label, ${left.fmt()} kg to go on your trend", style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        if (state.reached.isNotEmpty()) {
+            Spacer(Modifier.height(12.dp))
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                items(state.reached.sortedByDescending { it.rank }, key = { it.id }) { m ->
+                    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.width(76.dp)) {
+                        Box(
+                            Modifier.size(64.dp).clip(shapes[(m.rank % shapes.size)].toShape())
+                                .background(if (m.big) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.secondaryContainer),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Text(m.hero, style = MaterialTheme.typography.labelLarge, maxLines = 1,
+                                color = if (m.big) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSecondaryContainer)
+                        }
+                        Text(m.title, style = MaterialTheme.typography.labelSmall, maxLines = 2, textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+            }
+        }
     }
 }
