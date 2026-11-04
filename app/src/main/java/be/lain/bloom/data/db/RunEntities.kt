@@ -1,5 +1,6 @@
 package be.lain.bloom.data.db
 
+import androidx.room.ColumnInfo
 import androidx.room.Dao
 import androidx.room.Entity
 import androidx.room.Index
@@ -31,6 +32,12 @@ data class RunSessionEntity(
     val rpe: Int? = null,
     val notes: String = "",
     val healthConnectId: String? = null,
+    /** Set when the stats were recomputed from the saved route after the 1.2.1 distance bug. */
+    val recalculatedAt: Instant? = null,
+    /** The distance shown before recalculation. */
+    val originalDistanceM: Double? = null,
+    /** Recorded with the distance bug and no route to recompute from: distance, pace and energy are wrong. */
+    @ColumnInfo(defaultValue = "0") val distanceUnreliable: Boolean = false,
 )
 
 @Entity(tableName = "run_point", indices = [Index("runId")])
@@ -48,6 +55,8 @@ data class RunPointEntity(
     val segmentIndex: Int = 0,
     /** SegKind name, or null for a free run. */
     val segmentKind: String? = null,
+    /** Altitude from the barometer (standard atmosphere), steadier than GPS altitude for climb. */
+    val pressureAlt: Double? = null,
 )
 
 @Entity(tableName = "run_plan")
@@ -74,6 +83,8 @@ interface RunDao {
 
     @Insert suspend fun insertPoints(p: List<RunPointEntity>)
     @Query("SELECT * FROM run_point WHERE runId = :runId ORDER BY t") suspend fun points(runId: Long): List<RunPointEntity>
+    @Update suspend fun updatePoints(p: List<RunPointEntity>)
+    @Query("SELECT * FROM run_session WHERE finished = 1 ORDER BY startedAt") suspend fun finishedRuns(): List<RunSessionEntity>
     @Query("DELETE FROM run_point WHERE runId = :runId") suspend fun deletePoints(runId: Long)
 
     @Insert suspend fun insertPlan(p: RunPlanEntity): Long

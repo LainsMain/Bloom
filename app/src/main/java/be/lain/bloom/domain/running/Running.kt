@@ -3,7 +3,6 @@ package be.lain.bloom.domain.running
 import kotlinx.serialization.Serializable
 import kotlin.math.asin
 import kotlin.math.cos
-import kotlin.math.max
 import kotlin.math.roundToInt
 import kotlin.math.sin
 import kotlin.math.sqrt
@@ -102,31 +101,69 @@ object Geo {
     fun distance(a: GeoPoint, b: GeoPoint) = distance(a.lat, a.lon, b.lat, b.lon)
 
     /**
-     * Accepts a fix if it's accurate enough and doesn't imply an impossible speed.
-     * Returns the distance to add (0 for jitter while standing still) or null to reject.
+     * Distance filter measured from the last counted fix, the [anchor].
+     * Returns the metres to add when [p] becomes the new anchor (0 for the first fix), or null to skip it:
+     * too inaccurate, an impossible speed, or still inside the GPS noise around the anchor.
+     *
+     * A skipped fix must never replace the anchor. With one fix a second, consecutive fixes are only
+     * 1–3 m apart, under the noise radius, so measuring from the previous fix instead of the anchor
+     * throws away almost every step (Bloom 1.2.1 and earlier counted 0.15 km for a 39-minute run).
      */
-    fun accept(prev: GeoPoint?, p: GeoPoint, maxAccuracy: Float = 25f, maxSpeed: Double = 7.0): Double? {
+    fun accept(anchor: GeoPoint?, p: GeoPoint, maxAccuracy: Float = 25f, maxSpeed: Double = 7.0): Double? {
         if (p.accuracy > maxAccuracy) return null
-        if (prev == null) return 0.0
-        val d = distance(prev, p)
-        val dt = (p.t - prev.t) / 1000.0
+        if (anchor == null) return 0.0
+        val dt = (p.t - anchor.t) / 1000.0
         if (dt <= 0) return null
+        val d = distance(anchor, p)
         if (d / dt > maxSpeed) return null
-        // Ignore tiny moves inside the combined accuracy circle (GPS jitter).
-        return if (d < max(2.0, (prev.accuracy + p.accuracy) / 4.0)) 0.0 else d
+        return if (d < noiseRadius(anchor, p)) null else d
     }
 
-    /** Total ascent with a 3 m hysteresis to ignore barometric/GPS altitude noise. */
-    fun elevationGain(alts: List<Double>, threshold: Double = 3.0): Double {
-        if (alts.isEmpty()) return 0.0
+    /** How far a fix must be from the anchor to count as movement rather than GPS jitter. */
+    fun noiseRadius(a: GeoPoint, b: GeoPoint): Double = ((a.accuracy + b.accuracy) / 4.0).coerceIn(3.0, 8.0)
+
+    /**
+     * Total ascent from (seconds, altitude) samples. Altitudes are first averaged over ±[window] seconds,
+     * then rises are counted with a [threshold] hysteresis. GPS altitude wanders by metres even on flat
+     * ground, so it needs a wide window; a barometer is far steadier.
+     */
+    fun elevationGain(samples: List<Pair<Double, Double>>, window: Double = GPS_ALT_WINDOW, threshold: Double = GPS_ALT_THRESHOLD): Double {
+        if (samples.size < 2) return 0.0
+        val smooth = smooth(samples, window)
         var gain = 0.0
-        var ref = alts.first()
-        for (a in alts) {
+        var ref = smooth.first()
+        for (a in smooth) {
             if (a - ref >= threshold) { gain += a - ref; ref = a }
             else if (ref - a >= threshold) ref = a
         }
         return gain
     }
+
+    const val GPS_ALT_WINDOW = 30.0
+    const val GPS_ALT_THRESHOLD = 5.0
+    const val BARO_ALT_WINDOW = 10.0
+    const val BARO_ALT_THRESHOLD = 2.0
+
+    /** Centred moving average over ±[window] seconds (samples sorted by time). */
+    private fun smooth(samples: List<Pair<Double, Double>>, window: Double): List<Double> {
+        val out = ArrayList<Double>(samples.size)
+        var lo = 0; var hi = 0; var sum = 0.0
+        for (i in samples.indices) {
+            val t = samples[i].first
+            while (hi < samples.size && samples[hi].first <= t + window) { sum += samples[hi].second; hi++ }
+            while (samples[lo].first < t - window) { sum -= samples[lo].second; lo++ }
+            out += sum / (hi - lo)
+        }
+        return out
+    }
+
+    /**
+     * Climb from barometric altitudes when most of the [points] counted have one, otherwise from GPS.
+     * Second value: true if barometric.
+     */
+    fun climb(gps: List<Pair<Double, Double>>, baro: List<Pair<Double, Double>>, points: Int): Pair<Double, Boolean> =
+        if (baro.size >= 2 && baro.size * 2 >= points) elevationGain(baro, BARO_ALT_WINDOW, BARO_ALT_THRESHOLD) to true
+        else elevationGain(gps) to false
 
     /** Seconds per km for distance [m] in [sec]; null if not meaningful. */
     fun pace(sec: Double, m: Double): Double? = if (m < 20 || sec <= 0) null else sec / (m / 1000.0)
@@ -143,9 +180,78 @@ object Geo {
      * Energy above rest: running ≈ 1.0 kcal/kg/km, brisk walking ≈ 0.6 kcal/kg/km.
      * Faster than 9 min/km counts as running.
      */
-    fun kcal(weightKg: Double, km: Double, secPerKm: Double?): Int {
-        val factor = if (secPerKm != null && secPerKm < 540) 1.0 else 0.6
-        return (weightKg * km * factor).roundToInt()
+    fun kcal(weightKg: Double, km: Double, secPerKm: Double?): Int = kcalExact(weightKg, km, secPerKm).roundToInt()
+
+    private fun kcalExact(weightKg: Double, km: Double, secPerKm: Double?): Double =
+        weightKg * km * if (secPerKm != null && secPerKm < 540) 1.0 else 0.6
+
+    /**
+     * Energy for a whole track, so run/walk intervals count each part at its own pace: the track is cut
+     * at every segment change and at least once a minute, and each stretch is running or walking.
+     */
+    fun kcal(weightKg: Double, samples: List<TrackSample>): Int {
+        if (samples.size < 2) return 0
+        var total = 0.0
+        var start = samples.first()
+        for (i in 1 until samples.size) {
+            val s = samples[i]
+            if (s.seg != start.seg || s.sec - start.sec >= 60 || i == samples.lastIndex) {
+                val d = s.m - start.m
+                total += kcalExact(weightKg, d / 1000.0, pace(s.sec - start.sec, d))
+                start = s
+            }
+        }
+        return total.roundToInt()
+    }
+}
+
+/** (active seconds, cumulative metres, segment index) along a run. */
+data class TrackSample(val sec: Double, val m: Double, val seg: Int = 0)
+
+/** A stored GPS point, as far as the stats need it. */
+data class TrackPoint(
+    val t: Long, val lat: Double, val lon: Double, val alt: Double?, val pressureAlt: Double?,
+    val accuracy: Float, val activeSec: Double, val seg: Int,
+)
+
+data class TrackStats(
+    /** Cumulative metres at each input point. */
+    val cumulative: List<Double>,
+    val distanceM: Double,
+    val climbM: Double,
+    val climbFromBarometer: Boolean,
+    val kcal: Int,
+)
+
+object Track {
+    /**
+     * Recomputes a run's stats from its saved points with the same filter the live run uses.
+     * A pause shows up as wall-clock time passing without active time; distance never bridges one.
+     */
+    fun compute(points: List<TrackPoint>, weightKg: Double): TrackStats {
+        val cumulative = ArrayList<Double>(points.size)
+        val samples = mutableListOf<TrackSample>()
+        var anchor: GeoPoint? = null
+        var prev: TrackPoint? = null
+        var dist = 0.0
+        for (p in points) {
+            val paused = prev != null && (p.t - prev.t) / 1000.0 - (p.activeSec - prev.activeSec) > 3.0
+            if (paused) anchor = null
+            val g = GeoPoint(p.t, p.lat, p.lon, p.alt, p.accuracy)
+            Geo.accept(anchor, g)?.let { add ->
+                anchor = g
+                dist += add
+                samples += TrackSample(p.activeSec, dist, p.seg)
+            }
+            cumulative += dist
+            prev = p
+        }
+        val (climb, baro) = Geo.climb(
+            points.mapNotNull { p -> p.alt?.let { p.activeSec to it } },
+            points.mapNotNull { p -> p.pressureAlt?.let { p.activeSec to it } },
+            points.size,
+        )
+        return TrackStats(cumulative, dist, climb, baro, Geo.kcal(weightKg, samples))
     }
 }
 

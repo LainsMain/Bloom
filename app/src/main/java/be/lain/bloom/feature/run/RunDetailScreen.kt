@@ -18,6 +18,8 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.DeleteOutline
+import androidx.compose.material.icons.rounded.Info
+import androidx.compose.material.icons.rounded.WarningAmber
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -41,6 +43,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import be.lain.bloom.core.AppMessages
 import be.lain.bloom.core.designsystem.BloomCard
+import be.lain.bloom.core.designsystem.RouteLegend
 import be.lain.bloom.core.designsystem.RouteLine
 import be.lain.bloom.core.designsystem.RouteMap
 import be.lain.bloom.core.designsystem.StatTile
@@ -60,7 +63,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 import org.maplibre.android.geometry.LatLng
 
-data class RunDetail(val run: RunSessionEntity, val lines: List<RouteLine>, val splits: List<Split>)
+data class RunDetail(val run: RunSessionEntity, val lines: List<RouteLine>, val splits: List<Split>, val climbFromBarometer: Boolean)
 
 /** Groups points into lines per segment kind, breaking at pauses (gaps in time). */
 fun routeLines(points: List<RunPointEntity>): List<RouteLine> {
@@ -96,7 +99,8 @@ class RunDetailViewModel @AssistedInject constructor(
         viewModelScope.launch {
             val run = repo.run(key.id) ?: return@launch
             val pts = repo.points(key.id)
-            detail.value = RunDetail(run, routeLines(pts), Splits.compute(pts.map { it.activeSec to it.distanceM }))
+            detail.value = RunDetail(run, routeLines(pts), Splits.compute(pts.map { it.activeSec to it.distanceM }),
+                climbFromBarometer = pts.isNotEmpty() && pts.count { it.pressureAlt != null } * 2 >= pts.size)
         }
     }
 
@@ -128,6 +132,8 @@ fun RunDetailScreen(
                 if (det.lines.isEmpty()) Text("No GPS route recorded", modifier = Modifier.align(Alignment.Center))
                 else RouteMap(det.lines)
             }
+            RouteLegend(det.lines)
+            DataNote(r)
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 StatTile("Distance", "%.2f".format(r.distanceM / 1000), Modifier.weight(1f), unit = "km")
                 StatTile("Moving time", Geo.formatClock(r.movingSec), Modifier.weight(1f))
@@ -137,7 +143,8 @@ fun RunDetailScreen(
                 StatTile("Energy", "${r.kcal}", Modifier.weight(1f), unit = "kcal")
             }
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                StatTile("Climb", "${r.elevationGainM.toInt()}", Modifier.weight(1f), unit = "m")
+                StatTile("Climb", "${r.elevationGainM.toInt()}", Modifier.weight(1f), unit = "m",
+                    supporting = if (det.climbFromBarometer || det.lines.isEmpty()) null else "GPS estimate")
                 StatTile("Effort", r.rpe?.let { "$it/10" } ?: "–", Modifier.weight(1f), supporting = if (r.planCompleted) "Plan completed ✓" else null)
             }
             if (det.splits.isNotEmpty()) SplitsCard(det.splits)
@@ -151,6 +158,35 @@ fun RunDetailScreen(
             confirmButton = { TextButton(onClick = { confirm = false; vm.delete(onBack) }) { Text("Delete") } },
             dismissButton = { TextButton(onClick = { confirm = false }) { Text("Keep") } },
         )
+    }
+}
+
+/** Explains runs fixed or flagged after the 1.2.1 distance bug. */
+@Composable
+private fun DataNote(r: RunSessionEntity) {
+    val (title, body) = when {
+        r.distanceUnreliable -> "Distance is wrong" to
+            "This run was recorded with a bug that undercounted distance, and no route was saved to fix it from. " +
+            "Distance, pace and energy are wrong; the time is right."
+        r.recalculatedAt != null -> "Recalculated" to
+            ("A bug in older versions dropped most GPS steps from the distance. Distance, pace, splits, energy and climb " +
+                "were worked out again from your saved route" +
+                (r.originalDistanceM?.let { " (it showed %.2f km before).".format(it / 1000) } ?: "."))
+        else -> return
+    }
+    val warn = r.distanceUnreliable
+    Row(
+        Modifier.fillMaxWidth().clip(MaterialTheme.shapes.large)
+            .background(if (warn) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.secondaryContainer)
+            .padding(14.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        val fg = if (warn) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.onSecondaryContainer
+        Icon(if (warn) Icons.Rounded.WarningAmber else Icons.Rounded.Info, null, tint = fg)
+        Column {
+            Text(title, style = MaterialTheme.typography.titleSmall, color = fg)
+            Text(body, style = MaterialTheme.typography.bodyMedium, color = fg)
+        }
     }
 }
 

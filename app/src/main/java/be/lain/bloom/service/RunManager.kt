@@ -28,6 +28,7 @@ import be.lain.bloom.domain.running.IntervalTracker
 import be.lain.bloom.domain.running.RunCue
 import be.lain.bloom.domain.running.RunPlan
 import be.lain.bloom.domain.running.SegKind
+import be.lain.bloom.domain.running.TrackSample
 import be.lain.bloom.domain.running.Segment
 import be.lain.bloom.domain.running.formatDuration
 import be.lain.bloom.domain.running.formatMeters
@@ -102,8 +103,11 @@ class RunManager @Inject constructor(
     private var activeBase = 0L
     private var resumedAt = 0L
     private val buffer = mutableListOf<RunPointEntity>()
-    private val samples = mutableListOf<Pair<Double, Double>>() // (activeSec, metres) for pace/splits
-    private val altitudes = mutableListOf<Double>()
+    private val samples = mutableListOf<TrackSample>() // counted fixes, for pace and energy
+    private val gpsAlts = mutableListOf<Pair<Double, Double>>() // (activeSec, GPS altitude)
+    private val baroAlts = mutableListOf<Pair<Double, Double>>() // (activeSec, barometric altitude)
+    /** Latest smoothed barometric altitude, or null without a barometer. */
+    @Volatile private var pressureAlt: Double? = null
     private var kmAnnounced = 0
     private var weightKg = 70.0
 
@@ -115,7 +119,7 @@ class RunManager @Inject constructor(
         speaker.enabled = settings.settings.first().voiceCues
         speaker.warmUp()
         weightKg = body.weights.first().lastOrNull()?.kg ?: 70.0
-        tracker = null; lastPoint = null; activeBase = 0; buffer.clear(); samples.clear(); altitudes.clear(); kmAnnounced = 0
+        tracker = null; lastPoint = null; activeBase = 0; buffer.clear(); samples.clear(); gpsAlts.clear(); baroAlts.clear(); pressureAlt = null; kmAnnounced = 0
         val segs = plan?.segments().orEmpty()
         _live.value = LiveRun(title = title, planKey = planKey, plan = plan, segment = segs.firstOrNull(), nextSegment = segs.getOrNull(1))
         context.startForegroundService(Intent(context, RunService::class.java))
@@ -151,6 +155,12 @@ class RunManager @Inject constructor(
         }
     }
 
+    /** Barometer reading in hPa, smoothed into an altitude for climb. */
+    fun onPressure(hPa: Float) {
+        val alt = android.hardware.SensorManager.getAltitude(android.hardware.SensorManager.PRESSURE_STANDARD_ATMOSPHERE, hPa).toDouble()
+        pressureAlt = pressureAlt?.let { it + 0.1 * (alt - it) } ?: alt
+    }
+
     fun onLocation(loc: Location) {
         val l = _live.value ?: return
         val p = GeoPoint(loc.time, loc.latitude, loc.longitude, if (loc.hasAltitude()) loc.altitude else null, loc.accuracy)
@@ -159,16 +169,23 @@ class RunManager @Inject constructor(
             _live.value = l.copy(position = pos, accuracy = loc.accuracy)
             return
         }
-        val add = Geo.accept(lastPoint, p) ?: run { _live.value = l.copy(accuracy = loc.accuracy); return }
+        // Skipped fixes (jitter around the last counted point) still move the dot, but never the anchor.
+        val add = Geo.accept(lastPoint, p) ?: run {
+            _live.value = l.copy(accuracy = loc.accuracy, position = if (loc.accuracy <= 25f) pos else l.position); return
+        }
         lastPoint = p
         val dist = l.distanceM + add
         val act = activeMs()
-        samples += act / 1000.0 to dist
-        p.alt?.let { altitudes += it }
+        val sec = act / 1000.0
+        val seg = tracker?.index ?: 0
+        samples += TrackSample(sec, dist, seg)
+        p.alt?.let { gpsAlts += sec to it }
+        val baro = pressureAlt
+        baro?.let { baroAlts += sec to it }
         val kind = tracker?.current?.kind?.name
         buffer += RunPointEntity(
             runId = l.runId ?: return, t = p.t, lat = p.lat, lon = p.lon, alt = p.alt, accuracy = p.accuracy,
-            activeSec = act / 1000.0, distanceM = dist, segmentIndex = tracker?.index ?: 0, segmentKind = kind,
+            activeSec = sec, distanceM = dist, segmentIndex = seg, segmentKind = kind, pressureAlt = baro,
         )
         if (buffer.size >= 10) flush()
         // Extend the current line, or start a new one when the segment kind changes.
@@ -178,8 +195,9 @@ class RunManager @Inject constructor(
             val start = last?.points?.lastOrNull()?.takeIf { last.points.isNotEmpty() }
             lines += RouteLine(kind, listOfNotNull(start, pos))
         } else lines[lines.lastIndex] = last.copy(points = last.points + pos)
+        val climb = Geo.climb(gpsAlts, baroAlts, samples.size).first
         _live.value = l.copy(distanceM = dist, lines = lines, position = pos, accuracy = loc.accuracy, currentPace = recentPace(),
-            kcal = Geo.kcal(weightKg, dist / 1000.0, Geo.pace(act / 1000.0, dist)), elevationGain = Geo.elevationGain(altitudes))
+            kcal = Geo.kcal(weightKg, samples), elevationGain = climb)
         val km = (dist / 1000).toInt()
         if (km > kmAnnounced) {
             kmAnnounced = km
@@ -191,9 +209,9 @@ class RunManager @Inject constructor(
     /** Pace over the last ~30 s of movement. */
     private fun recentPace(): Double? {
         if (samples.size < 2) return null
-        val (tEnd, dEnd) = samples.last()
-        val start = samples.lastOrNull { tEnd - it.first >= 30 } ?: samples.first()
-        return Geo.pace(tEnd - start.first, dEnd - start.second)
+        val end = samples.last()
+        val start = samples.lastOrNull { end.sec - it.sec >= 30 } ?: samples.first()
+        return Geo.pace(end.sec - start.sec, end.m - start.m)
     }
 
     fun tick() {
@@ -303,6 +321,11 @@ class RunService : LifecycleService() {
     private val callback = object : LocationCallback() {
         override fun onLocationResult(result: LocationResult) { result.locations.forEach(manager::onLocation) }
     }
+    private val sensors by lazy { getSystemService(android.hardware.SensorManager::class.java) }
+    private val pressure = object : android.hardware.SensorEventListener {
+        override fun onSensorChanged(e: android.hardware.SensorEvent) { e.values.firstOrNull()?.let(manager::onPressure) }
+        override fun onAccuracyChanged(s: android.hardware.Sensor?, a: Int) = Unit
+    }
 
     override fun onCreate() {
         super.onCreate()
@@ -326,6 +349,10 @@ class RunService : LifecycleService() {
                     LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 1000).setMinUpdateIntervalMillis(500).build(),
                     callback, Looper.getMainLooper(),
                 )
+            }
+            runCatching {
+                sensors.getDefaultSensor(android.hardware.Sensor.TYPE_PRESSURE)
+                    ?.let { sensors.registerListener(pressure, it, android.hardware.SensorManager.SENSOR_DELAY_NORMAL) }
             }
             loop = lifecycleScope.launch {
                 var lastNotify = 0L
@@ -367,6 +394,7 @@ class RunService : LifecycleService() {
 
     override fun onDestroy() {
         runCatching { client.removeLocationUpdates(callback) }
+        runCatching { sensors.unregisterListener(pressure) }
         loop?.cancel()
         wakeLock?.takeIf { it.isHeld }?.release()
         super.onDestroy()

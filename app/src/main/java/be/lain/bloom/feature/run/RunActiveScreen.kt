@@ -268,6 +268,7 @@ private fun RunSummary(l: LiveRun, onSave: (Int?, String) -> Unit, onDiscard: ()
     ) {
         Text(if (l.planDone) "Plan complete! 🎉" else "Nice run!", style = MaterialTheme.typography.headlineMedium)
         Box(Modifier.fillMaxWidth().height(240.dp).clip(MaterialTheme.shapes.extraLarge)) { RouteMap(l.lines) }
+        be.lain.bloom.core.designsystem.RouteLegend(l.lines)
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             StatTile("Distance", "%.2f".format(l.distanceM / 1000), Modifier.weight(1f), unit = "km")
             StatTile("Time", Geo.formatClock((l.activeMs / 1000).toInt()), Modifier.weight(1f))
