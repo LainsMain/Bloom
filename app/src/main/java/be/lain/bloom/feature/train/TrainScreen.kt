@@ -96,7 +96,7 @@ class TrainViewModel @Inject constructor(
 
     fun setPhase(i: Int) = viewModelScope.launch {
         repo.setPhase(i)
-        messages.show("Now on phase ${i + 1}: ${Program.phase(i).name}")
+        messages.show("Now on phase ${i + 1}: ${status.value?.program?.phase(i)?.name.orEmpty()}")
     }
 
     fun delete(w: WorkoutSessionEntity) = viewModelScope.launch {
@@ -155,10 +155,10 @@ private fun LazyListScope.strengthContent(
     navigate: (Route) -> Unit,
     vm: TrainViewModel,
 ) {
-    item { ProgramCard(st, vm::setPhase) }
+    item { ProgramCard(st, vm::setPhase, onPrograms = { navigate(Route.Programs) }) }
     if (st.readyToAdvance) {
         item {
-            val next = Program.phase(st.phase.index + 1)
+            val next = st.program.phase(st.phase.index + 1)
             BloomCard(Modifier.fillMaxWidth(), color = MaterialTheme.colorScheme.tertiaryContainer) {
                 Text("Ready for ${next.name}?", style = MaterialTheme.typography.titleLarge)
                 Text("You've put in ${st.workoutsInPhase} workouts over ${st.week - 1} weeks. ${next.summary}", style = MaterialTheme.typography.bodyMedium)
@@ -187,7 +187,7 @@ private fun LazyListScope.strengthContent(
             )
             Spacer(Modifier.height(12.dp))
             Button(
-                onClick = { navigate(Route.WorkoutPreview(st.phase.index, s.id)) },
+                onClick = { navigate(Route.WorkoutPreview(st.phase.index, s.id, st.program.id)) },
                 shapes = ButtonDefaults.shapes(),
                 modifier = Modifier.fillMaxWidth().height(ButtonDefaults.MediumContainerHeight),
             ) {
@@ -198,7 +198,7 @@ private fun LazyListScope.strengthContent(
             Spacer(Modifier.height(4.dp))
             val other = st.phase.sessions.firstOrNull { it.id != s.id }
             if (other != null) {
-                TextButton(onClick = { navigate(Route.WorkoutPreview(st.phase.index, other.id)) }, modifier = Modifier.align(Alignment.CenterHorizontally)) {
+                TextButton(onClick = { navigate(Route.WorkoutPreview(st.phase.index, other.id, st.program.id)) }, modifier = Modifier.align(Alignment.CenterHorizontally)) {
                     Text("Do ${other.name} instead")
                 }
             }
@@ -207,8 +207,11 @@ private fun LazyListScope.strengthContent(
     item { WeekCard(profile, workouts) }
     item {
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FilledTonalButton(onClick = { navigate(Route.Programs) }) {
+                Icon(Icons.Rounded.FitnessCenter, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text("Programs")
+            }
             FilledTonalButton(onClick = { navigate(Route.ExerciseLibrary) }) {
-                Icon(Icons.Rounded.MenuBook, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text("Exercise library")
+                Icon(Icons.Rounded.MenuBook, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text("Exercises")
             }
         }
     }
@@ -219,13 +222,13 @@ private fun LazyListScope.strengthContent(
 }
 
 @Composable
-private fun ProgramCard(st: ProgramStatus, onSetPhase: (Int) -> Unit) {
+private fun ProgramCard(st: ProgramStatus, onSetPhase: (Int) -> Unit, onPrograms: () -> Unit) {
     var menu by remember { mutableStateOf(false) }
     var picker by remember { mutableStateOf(false) }
     BloomCard(Modifier.fillMaxWidth(), color = MaterialTheme.colorScheme.primaryContainer) {
         Row(verticalAlignment = Alignment.Top) {
             Column(Modifier.weight(1f)) {
-                Text(Program.NAME, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onPrimaryContainer)
+                Text(st.program.name, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onPrimaryContainer)
                 Text("Phase ${st.phase.index + 1} · ${st.phase.name}", style = MaterialTheme.typography.headlineSmall, color = MaterialTheme.colorScheme.onPrimaryContainer)
                 Text(
                     "Week ${st.week.coerceAtMost(st.phase.weeks)} of ${st.phase.weeks}${if (st.week > st.phase.weeks) "+" else ""} · ${st.workoutsInPhase} workout${if (st.workoutsInPhase == 1) "" else "s"} done",
@@ -235,6 +238,7 @@ private fun ProgramCard(st: ProgramStatus, onSetPhase: (Int) -> Unit) {
             Box {
                 IconButton(onClick = { menu = true }) { Icon(Icons.Rounded.MoreVert, "Program options") }
                 DropdownMenu(menu, { menu = false }) {
+                    DropdownMenuItem(text = { Text("Change program") }, onClick = { menu = false; onPrograms() })
                     DropdownMenuItem(text = { Text("Change phase") }, onClick = { menu = false; picker = true })
                 }
             }
@@ -250,7 +254,7 @@ private fun ProgramCard(st: ProgramStatus, onSetPhase: (Int) -> Unit) {
             title = { Text("Choose phase") },
             text = {
                 Column {
-                    Program.phases.forEach { ph ->
+                    st.program.phases.forEach { ph ->
                         TextButton(onClick = { picker = false; onSetPhase(ph.index) }, modifier = Modifier.fillMaxWidth()) {
                             Text("${ph.index + 1}. ${ph.name} (${ph.weeks} weeks)", modifier = Modifier.fillMaxWidth())
                         }

@@ -99,6 +99,32 @@ class AdaptiveTest {
         assertTrue(swing.notes.any { "period" in it })
     }
 
+    @Test fun dietBreakOnlyWhenDueOrStrained() {
+        val r = Adaptive.review(input(weights(0.5), week(1800.0)))
+        // 6 weeks in: too early even with low energy.
+        assertNull(Adaptive.suggestDietBreak(profile, r, review, null, false, energy = 1, hunger = null, sleep = null))
+        val tenWeeks = profile.copy(startDate = review.minusWeeks(10))
+        // 10 weeks, feeling fine and still losing: no break yet.
+        assertNull(Adaptive.suggestDietBreak(tenWeeks, r, review, null, false, energy = 4, hunger = 2, sleep = 4))
+        // 10 weeks and hungry: suggested, at the measured burn.
+        val b = Adaptive.suggestDietBreak(tenWeeks, r, review, null, false, energy = 3, hunger = 5, sleep = 3)!!
+        assertEquals(14, b.days)
+        assertEquals(r.newExpenditure, b.maintenanceKcal)
+        assertTrue(b.why.any { "hungry" in it })
+        // 12 weeks: due anyway. Recently had one, or already on one, or not losing: never.
+        val twelve = profile.copy(startDate = review.minusWeeks(12))
+        assertTrue(Adaptive.suggestDietBreak(twelve, r, review, null, false, null, null, null) != null)
+        assertNull(Adaptive.suggestDietBreak(twelve, r, review, review.minusWeeks(3), false, 1, 5, 1))
+        assertNull(Adaptive.suggestDietBreak(twelve, r, review, null, true, null, null, null))
+        assertNull(Adaptive.suggestDietBreak(twelve.copy(goal = be.lain.bloom.domain.Goal.MAINTAIN), r, review, null, false, null, null, null))
+    }
+
+    @Test fun onBreakTheTargetStaysAtMaintenance() {
+        val r = Adaptive.review(input(weights(0.5), week(1800.0), current = 2200).copy(onDietBreak = true))
+        assertEquals(r.newExpenditure, r.uncappedKcal)
+        assertTrue(r.notes.any { "diet break" in it })
+    }
+
     @Test fun guessesDayStatus() {
         assertEquals(DayStatus.SKIPPED, Adaptive.guessStatus(0.0, 0, 0, 1700))
         assertEquals(DayStatus.COMPLETE, Adaptive.guessStatus(1500.0, 6, 3, 1700))

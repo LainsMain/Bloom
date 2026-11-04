@@ -9,6 +9,7 @@ import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -24,7 +25,9 @@ data class AppSettings(
     val palette: Palette = Palette.ROSE,
     val waterGoalMl: Int = 2000,
     val waterServingMl: Int = 250,
-    /** Strength program phase (0-based) and the day it started; null = not started yet. */
+    /** The chosen strength program. */
+    val programId: String = be.lain.bloom.domain.training.Program.ID,
+    /** The active program's phase (0-based) and the day it started; null = not started yet. */
     val programPhase: Int = 0,
     val phaseStartEpochDay: Long? = null,
     val voiceCues: Boolean = true,
@@ -88,6 +91,12 @@ class SettingsRepository @Inject constructor(@ApplicationContext private val con
         val waterServing = intPreferencesKey("water_serving_ml")
         val phase = intPreferencesKey("program_phase")
         val phaseStart = androidx.datastore.preferences.core.longPreferencesKey("phase_start")
+        val programId = stringPreferencesKey("program_id")
+
+        /** Each program keeps its own progress; the original program uses the original keys. */
+        fun phase(id: String) = if (id == be.lain.bloom.domain.training.Program.ID) phase else intPreferencesKey("program_phase_$id")
+        fun phaseStart(id: String) =
+            if (id == be.lain.bloom.domain.training.Program.ID) phaseStart else androidx.datastore.preferences.core.longPreferencesKey("phase_start_$id")
         val voice = booleanPreferencesKey("voice_cues")
         val pauseBefore = booleanPreferencesKey("pause_before_exercise")
         val shareWeight = booleanPreferencesKey("share_weight")
@@ -110,8 +119,9 @@ class SettingsRepository @Inject constructor(@ApplicationContext private val con
         palette = this[Keys.palette]?.let { runCatching { Palette.valueOf(it) }.getOrNull() } ?: Palette.ROSE,
         waterGoalMl = this[Keys.waterGoal] ?: 2000,
         waterServingMl = this[Keys.waterServing] ?: 250,
-        programPhase = this[Keys.phase] ?: 0,
-        phaseStartEpochDay = this[Keys.phaseStart],
+        programId = this[Keys.programId] ?: be.lain.bloom.domain.training.Program.ID,
+        programPhase = this[Keys.phase(this[Keys.programId] ?: be.lain.bloom.domain.training.Program.ID)] ?: 0,
+        phaseStartEpochDay = this[Keys.phaseStart(this[Keys.programId] ?: be.lain.bloom.domain.training.Program.ID)],
         voiceCues = this[Keys.voice] ?: true,
         pauseBeforeExercise = this[Keys.pauseBefore] ?: false,
         shareWeight = this[Keys.shareWeight] ?: false,
@@ -136,8 +146,22 @@ class SettingsRepository @Inject constructor(@ApplicationContext private val con
     suspend fun setDynamicColor(on: Boolean) = context.dataStore.edit { it[Keys.dynamic] = on }
     suspend fun setPalette(p: Palette) = context.dataStore.edit { it[Keys.palette] = p.name }
     suspend fun setWaterGoal(ml: Int) = context.dataStore.edit { it[Keys.waterGoal] = ml.coerceIn(500, 6000) }
+    /** Saved phase and start day of any program (null start = never used). */
+    suspend fun programProgress(id: String): Pair<Int, Long?> {
+        val prefs = context.dataStore.data.first()
+        return (prefs[Keys.phase(id)] ?: 0) to prefs[Keys.phaseStart(id)]
+    }
+
+    /** Switches program; its saved phase is kept (a program never used before starts at phase 1 today). */
+    suspend fun setProgram(id: String, todayEpochDay: Long) = context.dataStore.edit {
+        it[Keys.programId] = id
+        if (it[Keys.phaseStart(id)] == null) { it[Keys.phase(id)] = 0; it[Keys.phaseStart(id)] = todayEpochDay }
+    }
+
+    /** Phase of the active program. */
     suspend fun setPhase(phase: Int, startEpochDay: Long) = context.dataStore.edit {
-        it[Keys.phase] = phase; it[Keys.phaseStart] = startEpochDay
+        val id = it[Keys.programId] ?: be.lain.bloom.domain.training.Program.ID
+        it[Keys.phase(id)] = phase; it[Keys.phaseStart(id)] = startEpochDay
     }
     suspend fun setShareWeight(on: Boolean) = context.dataStore.edit { it[Keys.shareWeight] = on }
     suspend fun setStepGoal(steps: Int) = context.dataStore.edit { it[Keys.stepGoal] = steps.coerceIn(1000, 30000) }

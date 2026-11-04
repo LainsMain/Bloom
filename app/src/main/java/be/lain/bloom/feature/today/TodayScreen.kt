@@ -106,7 +106,7 @@ fun TodayScreen(navigate: (Route) -> Unit, openTab: (Route) -> Unit, vm: TodayVi
             item {
                 val program by vm.program.collectAsStateWithLifecycle()
                 val runPlan by vm.runPlan.collectAsStateWithLifecycle()
-                TrainingCard(state, program, runPlan, onStartStrength = { p -> navigate(Route.WorkoutPreview(p.phase.index, p.next.id)) },
+                TrainingCard(state, program, runPlan, onStartStrength = { p -> navigate(Route.WorkoutPreview(p.phase.index, p.next.id, p.program.id)) },
                     onStartRun = { r -> navigate(Route.RunActive(r.key, r.plan.name)) },
                     onOpenTrain = { openTab(Route.Train) })
             }

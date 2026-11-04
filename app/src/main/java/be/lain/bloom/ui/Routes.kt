@@ -47,7 +47,8 @@ sealed interface Route : NavKey {
     @Serializable data class QuickLog(val date: Long, val meal: Meal, val camera: Boolean = false) : Route
 
     // Training
-    @Serializable data class WorkoutPreview(val phase: Int, val session: String) : Route
+    @Serializable data class WorkoutPreview(val phase: Int, val session: String, val program: String = be.lain.bloom.domain.training.Program.ID) : Route
+    @Serializable data object Programs : Route
     @Serializable data object WorkoutPlayer : Route
     @Serializable data object ExerciseLibrary : Route
     @Serializable data class ExerciseDetail(val id: String) : Route

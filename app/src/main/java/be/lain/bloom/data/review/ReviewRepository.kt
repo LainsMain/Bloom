@@ -158,7 +158,7 @@ class ReviewRepository @Inject constructor(
             stepDays = hc.size,
             latestMeasurement = measurements.lastOrNull(),
             previousMeasurement = measurements.dropLast(1).lastOrNull(),
-            strengthPhase = "${phase.name} (phase ${phase.index + 1} of ${Program.phases.size}, week ${st.week} of ${phase.weeks})",
+            strengthPhase = "${st.program.name}: ${phase.name} (phase ${phase.index + 1} of ${st.program.phases.size}, week ${st.week} of ${phase.weeks})",
             strengthReady = st.readyToAdvance,
             cycle = cycle.summary(reviewDate).takeIf { cycle.enabled.first() },
         )

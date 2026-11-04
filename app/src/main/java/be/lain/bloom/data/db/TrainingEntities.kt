@@ -31,6 +31,8 @@ data class WorkoutSessionEntity(
     val rpe: Int? = null,
     val notes: String = "",
     val healthConnectId: String? = null,
+    /** Which strength program this belonged to ("manual" sessions keep the program they were logged under). */
+    @androidx.room.ColumnInfo(defaultValue = "feminine-shape") val programId: String = be.lain.bloom.domain.training.Program.ID,
 )
 
 @Entity(tableName = "set_log", indices = [Index("workoutId"), Index("slotKey")])
@@ -66,7 +68,8 @@ interface TrainingDao {
     @Query("SELECT * FROM workout_session WHERE date BETWEEN :from AND :to ORDER BY startedAt") suspend fun workouts(from: LocalDate, to: LocalDate): List<WorkoutSessionEntity>
     @Query("SELECT * FROM workout_session WHERE id = :id") suspend fun workout(id: Long): WorkoutSessionEntity?
     @Query("SELECT * FROM set_log WHERE workoutId = :id ORDER BY id") suspend fun sets(id: Long): List<SetLogEntity>
-    @Query("SELECT COUNT(*) FROM workout_session WHERE phase = :phase AND date >= :since") fun observeCountInPhase(phase: Int, since: LocalDate): Flow<Int>
+    @Query("SELECT COUNT(*) FROM workout_session WHERE programId = :programId AND phase = :phase AND date >= :since")
+    fun observeCountInPhase(programId: String, phase: Int, since: LocalDate): Flow<Int>
 
     /** Sets from the most recent workout that included this slot. */
     @Query(

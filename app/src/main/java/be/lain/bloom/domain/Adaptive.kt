@@ -43,6 +43,8 @@ object Adaptive {
         val reviewDate: LocalDate,
         /** The week starts or ends on days when period-related water weight is likely. */
         val cycleSwing: Boolean = false,
+        /** On a diet break: the burn is still measured, but the target stays at maintenance. */
+        val onDietBreak: Boolean = false,
     )
 
     data class Result(
@@ -124,7 +126,8 @@ object Adaptive {
         }
         val newExpenditure = prior + confidence * ((measured ?: prior) - prior)
 
-        val target = Energy.targets(p, currentKg, date, expenditureOverride = newExpenditure)
+        val target = Energy.targets(if (input.onDietBreak) p.copy(goal = Goal.MAINTAIN) else p, currentKg, date, expenditureOverride = newExpenditure)
+        if (input.onDietBreak) notes += "You're on a diet break, so your target stays at maintenance. A little weight back in the first days is water and glycogen, not fat."
         val uncapped = target.targets.kcal
         val lo = input.currentTargetKcal - MAX_WEEKLY_CHANGE
         val hi = input.currentTargetKcal + MAX_WEEKLY_CHANGE
@@ -185,6 +188,46 @@ object Adaptive {
         targetKcal != null && kcal >= targetKcal * 0.6 && meals >= 2 -> DayStatus.COMPLETE
         targetKcal == null && meals >= 3 -> DayStatus.COMPLETE
         else -> DayStatus.PARTIAL
+    }
+
+    data class DietBreak(
+        val days: Int,
+        val maintenanceKcal: Int,
+        val targets: Targets,
+        /** Plain-language reasons, shown in the review. */
+        val why: List<String>,
+    )
+
+    /**
+     * Suggests a 2-week break at maintenance on a long fat-loss phase. Breaks help energy, hunger
+     * and sticking with it; the weight that comes back in the first days is water and glycogen.
+     * Due after 12 weeks of dieting, or after 8 weeks when the week shows strain.
+     */
+    fun suggestDietBreak(
+        profile: Profile,
+        result: Result,
+        reviewDate: LocalDate,
+        lastBreakEnd: LocalDate?,
+        onBreak: Boolean,
+        energy: Int?,
+        hunger: Int?,
+        sleep: Int?,
+    ): DietBreak? {
+        if (profile.goal != Goal.LOSE || onBreak) return null
+        val since = lastBreakEnd ?: profile.startDate
+        val weeks = ChronoUnit.DAYS.between(since, reviewDate) / 7
+        if (weeks < 8) return null
+        val why = buildList {
+            if (energy != null && energy <= 2) add("your energy was low this week")
+            if (hunger != null && hunger >= 4) add("you've been hungry a lot")
+            if (sleep != null && sleep <= 2) add("your sleep has been poor")
+            if (result.weeklyRateKg != null && result.weeklyRateKg > -0.1) add("your weight trend has stalled for two weeks")
+        }
+        if (why.isEmpty() && weeks < 12) return null
+        val kcal = Energy.roundTo(result.newExpenditure.toDouble(), 10).coerceAtLeast(result.floor)
+        val reasons = listOf("You've been eating in a deficit for $weeks weeks.") + why.map { it.replaceFirstChar(Char::uppercase) + "." }
+        val currentKg = result.trendKg ?: profile.startWeightKg
+        return DietBreak(14, kcal, Energy.macros(profile, currentKg, kcal), reasons)
     }
 
     /** The most recent [reviewDay] on or before [today]. */
