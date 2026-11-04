@@ -79,6 +79,29 @@ class ProfileRepository @Inject constructor(
         }
     }
 
+    /**
+     * Changes the goal and/or pace and recomputes today's targets, keeping the burn the weekly
+     * reviews measured (so the adaptive work isn't thrown away).
+     */
+    suspend fun updateGoal(goal: be.lain.bloom.domain.Goal?, goalKg: Double?, pace: Double?, reason: String) {
+        val now = clock.instant()
+        val today = LocalDate.now(clock)
+        val current = db.profileDao().get()?.toDomain() ?: return
+        val updated = current.copy(
+            goal = goal ?: current.goal,
+            goalWeightKg = goalKg ?: current.goalWeightKg,
+            paceKgPerWeek = pace ?: current.paceKgPerWeek,
+        )
+        val weights = db.bodyDao().weights().map { WeightPoint(it.date, it.kg) }
+        val kg = Trend.at(weights, today) ?: updated.startWeightKg
+        val measured = db.planDao().activeOn(today)?.expenditureKcal?.takeIf { it > 0 }?.toDouble()
+        val result = Energy.targets(updated, kg, today, expenditureOverride = measured)
+        db.withTransaction {
+            db.profileDao().upsert(updated.toEntity(now))
+            db.planDao().insert(planEntity(result, today, PlanSource.MANUAL, reason, now))
+        }
+    }
+
     /** Changes only the training days; the calorie plan is left to the weekly review. */
     suspend fun updateTrainingDays(strength: Set<java.time.DayOfWeek>, run: Set<java.time.DayOfWeek>) {
         val current = db.profileDao().get() ?: return

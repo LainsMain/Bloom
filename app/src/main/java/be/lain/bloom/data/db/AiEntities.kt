@@ -38,7 +38,10 @@ data class ChatMessageEntity(
     val createdAt: Instant,
 )
 
-enum class AiActionKind { LOG_FOOD, CREATE_FOOD, UPDATE_ENTRY, DELETE_ENTRY, LOG_WEIGHT, PLAN_PROPOSAL, TRAINING_PROPOSAL }
+enum class AiActionKind {
+    LOG_FOOD, CREATE_FOOD, UPDATE_ENTRY, DELETE_ENTRY, LOG_WEIGHT, PLAN_PROPOSAL, TRAINING_PROPOSAL,
+    CREATE_RECIPE, LOG_WORKOUT, LOG_RUN, LOG_MEASUREMENT, GOAL_PROPOSAL, REMINDER,
+}
 enum class AiActionStatus { APPLIED, UNDONE, PENDING, ACCEPTED, DECLINED }
 
 /** Undo journal / proposal record for everything the AI does. */

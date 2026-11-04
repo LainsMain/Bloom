@@ -97,8 +97,12 @@ class RunPlanEditorViewModel @AssistedInject constructor(
     fun update(f: (RunPlan) -> RunPlan) = plan.update(f)
 
     fun save() = viewModelScope.launch {
-        repo.savePlan(key.id, plan.value)
-        messages.show("Saved ${plan.value.name}")
+        val id = repo.savePlan(key.id, plan.value)
+        if (key.id == null) {
+            // A plan you just made is the one you want to run next.
+            repo.setActivePlan(id)
+            messages.show("${plan.value.name} is now your run plan")
+        } else messages.show("Saved ${plan.value.name}")
         _done.tryEmit(Unit)
     }
 

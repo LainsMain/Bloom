@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
@@ -175,7 +176,8 @@ fun CoachScreen(vm: CoachViewModel = hiltViewModel()) {
     val pickers = rememberPhotoPickers(vm::attach)
     val scope = rememberCoroutineScope()
 
-    LaunchedEffect(items.size, run.streaming.length / 80, run.busy) {
+    val imeVisible = androidx.compose.foundation.layout.WindowInsets.isImeVisible
+    LaunchedEffect(items.size, run.streaming.length / 80, run.busy, imeVisible) {
         val count = list.layoutInfo.totalItemsCount
         if (count > 0) list.animateScrollToItem(count - 1)
     }

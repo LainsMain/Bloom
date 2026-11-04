@@ -36,6 +36,11 @@ private val Context.runStore by preferencesDataStore(name = "running")
 
 data class PlanRef(val key: String, val plan: RunPlan)
 
+/** The plan shown at the top of Running and started from Today: the built-in program or one of the user's own. */
+data class ActivePlan(val key: String, val plan: RunPlan, val planId: Long?) {
+    val isProgram: Boolean get() = planId == null
+}
+
 @Singleton
 class RunRepository @Inject constructor(
     @ApplicationContext private val context: Context,
@@ -57,8 +62,20 @@ class RunRepository @Inject constructor(
 
     suspend fun setProgramIndex(i: Int) = context.runStore.edit { it[programKey] = i.coerceIn(0, RunProgram.runs.lastIndex) }
 
+    private val activeKey = androidx.datastore.preferences.core.longPreferencesKey("active_plan_id")
+
+    /** null = the built-in run-walk program. */
+    suspend fun setActivePlan(planId: Long?) = context.runStore.edit { if (planId == null) it.remove(activeKey) else it[activeKey] = planId }
+
     val plans: Flow<List<Pair<RunPlanEntity, RunPlan>>> = dao.observePlans().map { list ->
         list.mapNotNull { e -> runCatching { e to json.decodeFromString(RunPlan.serializer(), e.planJson) }.getOrNull() }
+    }
+
+    val activePlan: Flow<ActivePlan> = kotlinx.coroutines.flow.combine(context.runStore.data, plans) { prefs, list ->
+        val id = prefs[activeKey]
+        val own = list.firstOrNull { it.first.id == id }
+        if (own != null) ActivePlan("plan:${own.first.id}", own.second, own.first.id)
+        else (prefs[programKey] ?: 0).let { i -> ActivePlan("program:$i", RunProgram.at(i), null) }
     }
 
     suspend fun plan(id: Long): RunPlan? = dao.plan(id)?.let { runCatching { json.decodeFromString(RunPlan.serializer(), it.planJson) }.getOrNull() }
@@ -70,7 +87,10 @@ class RunRepository @Inject constructor(
         else { dao.updatePlan(RunPlanEntity(id, plan.name, text, dao.plan(id)?.createdAt ?: now, now)); id }
     }
 
-    suspend fun deletePlan(id: Long) = dao.deletePlan(id)
+    suspend fun deletePlan(id: Long) {
+        dao.deletePlan(id)
+        context.runStore.edit { if (it[activeKey] == id) it.remove(activeKey) }
+    }
 
     suspend fun resolve(key: String): RunPlan? = when {
         key.startsWith("program:") -> RunProgram.at(key.removePrefix("program:").toInt())
@@ -101,8 +121,10 @@ class RunningContext @Inject constructor(private val repo: RunRepository) : Trai
     override suspend fun summary(from: LocalDate, to: LocalDate): JsonObject {
         val list = repo.runsBetween(from, to)
         val idx = repo.programIndex.first()
+        val active = repo.activePlan.first()
         return buildJsonObject {
-            put("run_program", "${RunProgram.NAME}: next is ${RunProgram.at(idx).name} (${idx + 1}/${RunProgram.runs.size})")
+            if (active.isProgram) put("run_plan", "Built-in ${RunProgram.NAME}: next is ${RunProgram.at(idx).name} (${idx + 1}/${RunProgram.runs.size})")
+            else put("run_plan", "The user's own interval plan \"${active.plan.name}\": ${active.plan.summary()}, about ${active.plan.totalSeconds / 60} min")
             put("runs", buildJsonArray {
                 list.forEach { r ->
                     add(buildJsonObject {

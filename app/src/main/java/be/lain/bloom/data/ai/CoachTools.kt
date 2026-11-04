@@ -61,6 +61,7 @@ class CoachTools @Inject constructor(
     private val training: dagger.Lazy<Set<@JvmSuppressWildcards TrainingContext>>,
     private val strength: dagger.Lazy<be.lain.bloom.data.training.TrainingRepository>,
     private val running: dagger.Lazy<be.lain.bloom.data.training.RunRepository>,
+    private val more: dagger.Lazy<MoreTools>,
     private val clock: Clock,
 ) {
     private val json = Json { ignoreUnknownKeys = true }
@@ -102,6 +103,7 @@ class CoachTools @Inject constructor(
                             put("date", DeepSeek.prop("string", "YYYY-MM-DD, default today"))
                             put("food_ref", DeepSeek.prop("string", "Ref from search_foods/lookup_barcode/create_food"))
                             put("grams", DeepSeek.prop("number", "Amount eaten in g (or ml)"))
+                            put("servings", DeepSeek.prop("number", "Instead of grams with a food_ref: number of the food's servings/portions (e.g. 1 portion of a recipe)"))
                             put("kcal", DeepSeek.prop("number", "Estimated kcal for the portion (only without food_ref)"))
                             put("protein", DeepSeek.prop("number", "g, estimate"))
                             put("carbs", DeepSeek.prop("number", "g, estimate"))
@@ -163,6 +165,7 @@ class CoachTools @Inject constructor(
                 put("run_days", DeepSeek.prop("string", "For set_training_days: comma-separated weekdays, may be empty"))
                 put("reason", DeepSeek.prop("string", "One-sentence reason shown to the user"))
             }, listOf("change", "reason")))
+        more.get().definitions().forEach { add(it) }
     }
 
     /** Executes one tool call; never throws (errors are returned to the model). */
@@ -183,6 +186,7 @@ class CoachTools @Inject constructor(
             "log_weight" -> logWeight(chatId, args)
             "propose_plan_change" -> proposePlan(chatId, args)
             "propose_training_change" -> proposeTraining(chatId, args)
+            in more.get().names -> more.get().execute(chatId, call.name, args, ::resolve) { c, k, st, sum, pl -> newAction(c, k, st, sum, pl) }
             else -> err("Unknown tool ${call.name}")
         }
     } catch (e: Exception) {
@@ -341,9 +345,9 @@ class CoachTools @Inject constructor(
             val e = el.jsonObject
             val meal = e.s("meal").toMeal() ?: defaults.meal ?: food.defaultMeal()
             val date = e.date("date") ?: defaults.date
-            val grams = e.d("grams")
             val ref = e.s("food_ref")
             val f = if (ref.isNotBlank()) resolve(ref) else null
+            val grams = e.d("grams") ?: e.d("servings")?.let { n -> f?.servings?.firstOrNull()?.grams?.times(n) }
             if (f != null && grams != null && grams > 0) {
                 val id = food.log(f, grams, grams, if (f.liquid) "ml" else "g", meal, date, EntrySource.AI, actionId)
                 food.entry(id)?.let(created::add)
@@ -553,6 +557,7 @@ class AiActions @Inject constructor(
     private val profiles: ProfileRepository,
     private val strength: be.lain.bloom.data.training.TrainingRepository,
     private val running: be.lain.bloom.data.training.RunRepository,
+    private val more: MoreTools,
 ) {
     private val json = Json { ignoreUnknownKeys = true }
 
@@ -566,7 +571,7 @@ class AiActions @Inject constructor(
             AiActionKind.UPDATE_ENTRY -> p["before"]?.jsonObject?.let { food.updateEntryRaw(AiJson.entryFrom(it)) }
             AiActionKind.DELETE_ENTRY -> p["before"]?.jsonObject?.let { food.restoreEntry(AiJson.entryFrom(it)) }
             AiActionKind.LOG_WEIGHT -> p["weightId"]?.jsonPrimitive?.longOrNull?.let { body.deleteWeight(it) }
-            else -> Unit
+            else -> more.undo(a.kind, p)
         }
         db.chatDao().updateAction(a.copy(status = AiActionStatus.UNDONE))
     }
@@ -583,6 +588,7 @@ class AiActions @Inject constructor(
                 "Coach suggestion: ${p["reason"]?.jsonPrimitive?.contentOrNull.orEmpty()}".take(200))
         }
         if (a.kind == AiActionKind.TRAINING_PROPOSAL) applyTraining(p)
+        if (a.kind == AiActionKind.GOAL_PROPOSAL) more.acceptGoal(p)
         db.chatDao().updateAction(a.copy(status = AiActionStatus.ACCEPTED))
     }
 
