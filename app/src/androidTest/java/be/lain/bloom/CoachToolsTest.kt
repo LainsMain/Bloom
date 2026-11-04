@@ -182,6 +182,20 @@ class CoachToolsTest {
         }
     }
 
+    @Test fun editingTheProfileKeepsTheMeasuredBurn() = runBlocking {
+        val before = db.planDao().observeAll().first().size
+        val p = profiles.profile.first()!!
+        // Name and notes only: no new plan.
+        profiles.updateProfile(p.copy(name = "Renamed", notes = "Trans woman, 1 year on HRT"))
+        assertEquals(before, db.planDao().observeAll().first().size)
+        assertEquals("Trans woman, 1 year on HRT", profiles.profile.first()!!.notes)
+        // A slower pace: new plan, but built on the reviewed burn (2150), not the formula.
+        profiles.updateProfile(profiles.profile.first()!!.copy(paceKgPerWeek = 0.25))
+        val plan = db.planDao().activeOn(today)!!
+        assertEquals(2150, plan.expenditureKcal)
+        assertEquals("Trans woman, 1 year on HRT", profiles.profile.first()!!.notes)
+    }
+
     @Test fun goalChangeIsAProposalAndKeepsTheMeasuredBurn() {
         assertTrue(call("propose_goal_change", """{"goal_kg":50,"reason":"x"}""").containsKey("error"))
         call("propose_goal_change", """{"goal_kg":65,"pace_kg_per_week":0.4,"reason":"Reassess at 70"}""")

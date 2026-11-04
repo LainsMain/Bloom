@@ -54,6 +54,7 @@ class SettingsViewModel @Inject constructor(
     }
 
     // ---- updates ----
+    fun saveNotes(text: String) = viewModelScope.launch { profiles.setNotes(text); messages.show("Saved. Your coach will take this into account.") }
     fun setCycleTracking(on: Boolean) = viewModelScope.launch { settingsRepo.setCycleTracking(on) }
     fun setUpdateCheck(on: Boolean) = viewModelScope.launch { settingsRepo.setUpdateCheck(on) }
 
@@ -128,7 +129,7 @@ class SettingsViewModel @Inject constructor(
 
     fun saveProfile(draft: ProfileDraft, onDone: () -> Unit) = viewModelScope.launch {
         val p = state.value.profile ?: return@launch
-        profiles.updateProfile(draft.toProfile(startDate = p.startDate, startWeightKg = p.startWeightKg))
+        profiles.updateProfile(draft.toProfile(startDate = p.startDate, startWeightKg = p.startWeightKg).copy(notes = p.notes))
         onDone()
     }
 

@@ -28,6 +28,7 @@ data class ProfileEntity(
     val runDays: Set<DayOfWeek>,
     val startDate: LocalDate,
     val updatedAt: Instant,
+    @androidx.room.ColumnInfo(defaultValue = "") val notes: String = "",
 )
 
 @Entity(tableName = "plan_version", indices = [Index("effectiveDate")])
