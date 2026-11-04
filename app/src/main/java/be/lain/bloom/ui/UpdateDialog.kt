@@ -63,7 +63,7 @@ fun UpdateDialog(updater: Updater) {
         is UpdateState.Installing -> AlertDialog(
             onDismissRequest = { },
             title = { Text("Installing ${s.release.version}") },
-            text = { Text("Confirm the update in Android's installer. Bloom restarts when it's done.") },
+            text = { Text("Confirm the update in Android's installer. Bloom closes while it updates and sends a notification when it's done.") },
             confirmButton = { TextButton(onClick = updater::dismiss) { Text("Hide") } },
         )
         is UpdateState.Failed -> if (s.release != null) AlertDialog(
@@ -71,7 +71,12 @@ fun UpdateDialog(updater: Updater) {
             title = { Text("Update not installed") },
             text = { Text(s.message) },
             confirmButton = { Button(onClick = { updater.download(s.release) }) { Text("Try again") } },
-            dismissButton = { TextButton(onClick = updater::dismiss) { Text("Close") } },
+            dismissButton = {
+                Column {
+                    TextButton(onClick = updater::dismiss) { Text("Close") }
+                    TextButton(onClick = { updater.openReleasePage(s.release); updater.dismiss() }) { Text("Open on GitHub") }
+                }
+            },
         )
         else -> Unit
     }

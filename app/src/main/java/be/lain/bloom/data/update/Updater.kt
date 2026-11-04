@@ -257,8 +257,46 @@ class Updater @Inject constructor(
             PackageInstaller.STATUS_PENDING_USER_ACTION -> confirm?.let { context.startActivity(it.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
             PackageInstaller.STATUS_SUCCESS -> _state.value = UpdateState.Idle
             PackageInstaller.STATUS_FAILURE_ABORTED -> _state.value = r?.let { UpdateState.Available(it) } ?: UpdateState.Idle
-            else -> _state.value = UpdateState.Failed(message ?: "The update couldn't be installed", r)
+            else -> _state.value = UpdateState.Failed(friendly(status, message), r)
         }
+    }
+
+    private fun friendly(status: Int, message: String?): String = when {
+        message?.contains("VERIFICATION", ignoreCase = true) == true || status == PackageInstaller.STATUS_FAILURE_BLOCKED ->
+            "Play Protect stopped the install while checking the app. Tap Try again; if it keeps happening, download it from GitHub instead."
+        status == PackageInstaller.STATUS_FAILURE_STORAGE -> "There isn't enough free space for the update."
+        status == PackageInstaller.STATUS_FAILURE_CONFLICT || status == PackageInstaller.STATUS_FAILURE_INCOMPATIBLE ->
+            "Android couldn't install this version over the current one."
+        else -> "The update couldn't be installed" + (message?.let { " ($it)" } ?: "")
+    }
+
+    fun openReleasePage(r: Release?) {
+        val url = "https://github.com/${BuildConfig.UPDATE_REPO}/releases/" + (r?.let { "tag/${it.tag}" } ?: "latest")
+        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+    }
+}
+
+/** After a self-update Android doesn't reopen the app; a notification says it's done. */
+class UpdatedReceiver : BroadcastReceiver() {
+    @android.annotation.SuppressLint("MissingPermission")
+    override fun onReceive(context: Context, intent: Intent) {
+        if (intent.action != Intent.ACTION_MY_PACKAGE_REPLACED) return
+        val nm = androidx.core.app.NotificationManagerCompat.from(context)
+        val allowed = android.os.Build.VERSION.SDK_INT < 33 ||
+            androidx.core.content.ContextCompat.checkSelfPermission(context, android.Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
+        if (!allowed || !nm.areNotificationsEnabled()) return
+        val manager = context.getSystemService(android.app.NotificationManager::class.java)
+        manager.createNotificationChannel(android.app.NotificationChannel("updates", "App updates", android.app.NotificationManager.IMPORTANCE_DEFAULT))
+        val open = context.packageManager.getLaunchIntentForPackage(context.packageName) ?: return
+        val pi = PendingIntent.getActivity(context, 0, open, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+        val n = androidx.core.app.NotificationCompat.Builder(context, "updates")
+            .setSmallIcon(be.lain.bloom.R.drawable.ic_launcher_monochrome)
+            .setContentTitle("Bloom is updated")
+            .setContentText("You're now on version ${BuildConfig.VERSION_NAME}. Tap to open.")
+            .setContentIntent(pi)
+            .setAutoCancel(true)
+            .build()
+        runCatching { nm.notify(4200, n) }
     }
 }
 
