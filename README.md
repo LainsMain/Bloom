@@ -16,13 +16,14 @@ Requires Android 12 or newer (arm64 phones).
 
 ## What's in it
 
-- **Food tracking:** search your own foods, a built-in offline food database (USDA), and Open Food Facts. Barcode scanner; unknown products can be added by hand or looked up by the AI. Recipes with cooked weight, saved meals, quick add, a diary with day completeness.
+- **Food tracking:** search your own foods, a built-in offline food database (USDA), and Open Food Facts. Barcode scanner (live camera or from a photo); unknown products can be added by hand or looked up by the AI. Recipes with cooked weight, saved meals, quick add, a diary with day completeness.
 - **AI coach (DeepSeek, optional):** describe or photograph a meal and it's logged with Undo; barcodes in photos are read on the phone. It can save recipes and regular combos, copy meals, log workouts, runs and measurements done outside the app, read your exact sets and reps to coach progression, look back over 120 days of nutrition, compare progress photos when you ask, and schedule a reminder. Changes to targets, goals or training are only applied when you tap Accept. Uses your own DeepSeek API key, stored encrypted with the Android Keystore.
 - **Strength:** a 4-phase home bodyweight program (glutes, legs, deep core, posture), 51 exercises with embedded demo videos and easier/harder variations, and a guided player with timers, voice cues and a big pause button.
 - **Running:** a 27-run beginner run-walk program or your own interval plan (whichever you choose is shown on Today on run days), GPS tracking with a live map, splits and pace.
 - **Health Connect:** reads steps, weigh-ins and other apps' workouts; writes your runs and workouts. Runs are never counted twice, and exercise never adds calories to your food budget.
 - **Weekly review:** marks which days were logged completely, checks in on energy, hunger, sleep and soreness, then estimates your real energy expenditure from intake and the weight trend. The new target changes by at most 150 kcal a week and never goes below a safe minimum. The AI explains the numbers and can suggest training changes.
-- **Progress:** weight trend with goal projection, calories vs target, waist and hips, training per week, run distance, progress photos.
+- **Progress:** weight trend with goal projection (period days marked when cycle tracking is on), calories vs target, waist and hips, training per week, run distance, progress photos.
+- **Cycle tracking (optional):** log period days, flow and symptoms on a calendar; see cycle day, phase and the expected next period on Today. The weekly review counts a week for less when period water weight sits at either end of it, and the coach takes the cycle into account before reacting to the scale.
 - **Reminders** for the weekly review, weigh-ins, meal logging and training days.
 - **Privacy:** optional app lock (fingerprint, face or screen lock) and password-encrypted backups (AES-256-GCM) to a file you choose.
 
