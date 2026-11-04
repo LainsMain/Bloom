@@ -309,6 +309,7 @@ class ReviewRepository @Inject constructor(
                 })
             }
             week.cycle?.let { put("cycle", it) }
+            if (week.profile.notes.isNotBlank()) put("about_the_user", week.profile.notes)
             put("check_in_1_to_5", buildJsonObject {
                 checkIn.energy?.let { put("energy", it) }; checkIn.hunger?.let { put("hunger", it) }
                 checkIn.sleep?.let { put("sleep", it) }; checkIn.soreness?.let { put("soreness", it) }

@@ -107,6 +107,7 @@ fun SettingsScreen(onBack: () -> Unit, navigate: (Route) -> Unit, vm: SettingsVi
                     }
                 }
             }
+            state.profile?.let { p -> item { CoachNotesCard(p.notes, vm::saveNotes) } }
             state.activePlan?.let { plan ->
                 item { SectionHeader("Your plan") { TextButton(onClick = { showHistory = !showHistory }) { Text(if (showHistory) "Hide history" else "History") } } }
                 item {
@@ -588,5 +589,45 @@ private fun UpdatesCard(vm: SettingsViewModel, s: be.lain.bloom.data.AppSettings
             )
             TextButton(onClick = vm.updater::checkNow, enabled = state != be.lain.bloom.data.update.UpdateState.Checking) { Text("Check now") }
         }
+    }
+}
+
+@Composable
+private fun CoachNotesCard(notes: String, onSave: (String) -> Unit) {
+    var editing by rememberSaveable { mutableStateOf(false) }
+    BloomCard(Modifier.fillMaxWidth(), onClick = { editing = true }) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("About you, for your coach", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+            TextButton(onClick = { editing = true }) { Text(if (notes.isBlank()) "Add" else "Edit") }
+        }
+        Text(
+            notes.ifBlank { "Anything that makes you different from the average, so your coach doesn't assume: e.g. trans woman, 1 year on HRT; a knee injury; vegetarian; night shifts." },
+            style = MaterialTheme.typography.bodyMedium,
+            color = if (notes.isBlank()) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface,
+        )
+    }
+    if (editing) {
+        var text by rememberSaveable { mutableStateOf(notes) }
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { editing = false },
+            title = { Text("About you") },
+            text = {
+                Column {
+                    Text(
+                        "Your coach reads this in every chat and in your weekly review. It stays on your phone and is only sent to DeepSeek with your coach messages.",
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    androidx.compose.material3.OutlinedTextField(
+                        value = text, onValueChange = { text = it.take(1500) }, minLines = 4, maxLines = 10,
+                        placeholder = { Text("e.g. Trans woman, 1 year on HRT. No cycle to track. Bad left knee: no jumping.") },
+                        supportingText = { Text("${text.length} / 1500") },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+            },
+            confirmButton = { TextButton(onClick = { onSave(text); editing = false }) { Text("Save") } },
+            dismissButton = { TextButton(onClick = { editing = false }) { Text("Cancel") } },
+        )
     }
 }

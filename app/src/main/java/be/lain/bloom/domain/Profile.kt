@@ -42,6 +42,8 @@ data class Profile(
     val strengthDays: Set<DayOfWeek>,
     val runDays: Set<DayOfWeek>,
     val startDate: LocalDate,
+    /** The user's own notes for the coach (e.g. "trans woman, 1 year on HRT", an injury, night shifts). */
+    val notes: String = "",
 ) {
     fun ageOn(date: LocalDate): Int = (date.year - birthYear).coerceIn(14, 100)
     val plannedSessionsPerWeek: Int get() = strengthDays.size + runDays.size

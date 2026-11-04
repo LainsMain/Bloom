@@ -214,10 +214,24 @@ fun rememberPhotoPickers(onPicked: (List<Uri>) -> Unit): PhotoPickers {
     var pending by remember { mutableStateOf<Uri?>(null) }
     val cam = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { ok -> pending?.let { if (ok) onPicked(listOf(it)) } }
     val gal = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia(4)) { uris -> if (uris.isNotEmpty()) onPicked(uris) }
+    fun openCamera() {
+        // Never crash if no camera app can take the picture.
+        runCatching { cameraUri(context).also { pending = it }.let(cam::launch) }
+            .onFailure { android.widget.Toast.makeText(context, "Couldn't open the camera", android.widget.Toast.LENGTH_SHORT).show() }
+    }
+    // Bloom declares CAMERA (for the barcode scanner), so Android refuses camera intents until it's granted.
+    val permission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) openCamera()
+        else android.widget.Toast.makeText(context, "Allow camera access to take a photo", android.widget.Toast.LENGTH_SHORT).show()
+    }
     return remember {
         PhotoPickers(
-            camera = { cameraUri(context).also { pending = it }.let(cam::launch) },
-            gallery = { gal.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
+            camera = {
+                val granted = androidx.core.content.ContextCompat.checkSelfPermission(context, android.Manifest.permission.CAMERA) ==
+                    android.content.pm.PackageManager.PERMISSION_GRANTED
+                if (granted) openCamera() else permission.launch(android.Manifest.permission.CAMERA)
+            },
+            gallery = { runCatching { gal.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) } },
         )
     }
 }

@@ -15,6 +15,7 @@ import be.lain.bloom.domain.Targets
 import be.lain.bloom.domain.Trend
 import be.lain.bloom.domain.WeightPoint
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import java.time.Clock
 import java.time.Instant
@@ -26,13 +27,14 @@ fun ProfileEntity.toDomain() = Profile(
     name = name, goal = goal, formula = formula, birthYear = birthYear, heightCm = heightCm,
     startWeightKg = startWeightKg, goalWeightKg = goalWeightKg, lifestyle = lifestyle,
     paceKgPerWeek = paceKgPerWeek, strengthDays = strengthDays, runDays = runDays, startDate = startDate,
+    notes = notes,
 )
 
 fun Profile.toEntity(now: Instant) = ProfileEntity(
     name = name, goal = goal, formula = formula, birthYear = birthYear, heightCm = heightCm,
     startWeightKg = startWeightKg, goalWeightKg = goalWeightKg, lifestyle = lifestyle,
     paceKgPerWeek = paceKgPerWeek, strengthDays = strengthDays, runDays = runDays, startDate = startDate,
-    updatedAt = now,
+    updatedAt = now, notes = notes,
 )
 
 fun PlanVersionEntity.toDomain() = PlanVersion(
@@ -70,13 +72,37 @@ class ProfileRepository @Inject constructor(
     suspend fun updateProfile(profile: Profile, reason: String = "You edited your profile") {
         val now = clock.instant()
         val today = LocalDate.now(clock)
+        val before = db.profileDao().get()?.toDomain()
+        // Name or notes only: nothing about the plan changes.
+        if (before != null && sameTargetsInputs(before, profile)) {
+            db.profileDao().upsert(profile.toEntity(now))
+            return
+        }
         val weights = db.bodyDao().weights().map { WeightPoint(it.date, it.kg) }
         val current = Trend.at(weights, today) ?: profile.startWeightKg
-        val result = Energy.targets(profile, current, today)
+        // Keep the burn the weekly reviews measured; only rescale it if daily activity changed.
+        val measured = measuredExpenditure(today)?.let { burn ->
+            if (before == null) burn
+            else burn * Energy.activityFactor(profile.lifestyle, profile.plannedSessionsPerWeek) /
+                Energy.activityFactor(before.lifestyle, before.plannedSessionsPerWeek)
+        }
+        val result = Energy.targets(profile, current, today, expenditureOverride = measured)
         db.withTransaction {
             db.profileDao().upsert(profile.toEntity(now))
             db.planDao().insert(planEntity(result, today, PlanSource.MANUAL, reason, now))
         }
+    }
+
+    private fun sameTargetsInputs(a: Profile, b: Profile) =
+        a.goal == b.goal && a.formula == b.formula && a.birthYear == b.birthYear && a.heightCm == b.heightCm &&
+            a.goalWeightKg == b.goalWeightKg && a.lifestyle == b.lifestyle && a.paceKgPerWeek == b.paceKgPerWeek &&
+            a.strengthDays == b.strengthDays && a.runDays == b.runDays
+
+    /** The active plan's burn, if any weekly review has measured it. */
+    private suspend fun measuredExpenditure(date: LocalDate): Double? {
+        val reviewed = db.planDao().observeAll().first().any { it.source == PlanSource.WEEKLY_REVIEW }
+        if (!reviewed) return null
+        return db.planDao().activeOn(date)?.expenditureKcal?.takeIf { it > 0 }?.toDouble()
     }
 
     /**
@@ -94,12 +120,17 @@ class ProfileRepository @Inject constructor(
         )
         val weights = db.bodyDao().weights().map { WeightPoint(it.date, it.kg) }
         val kg = Trend.at(weights, today) ?: updated.startWeightKg
-        val measured = db.planDao().activeOn(today)?.expenditureKcal?.takeIf { it > 0 }?.toDouble()
-        val result = Energy.targets(updated, kg, today, expenditureOverride = measured)
+        val result = Energy.targets(updated, kg, today, expenditureOverride = measuredExpenditure(today))
         db.withTransaction {
             db.profileDao().upsert(updated.toEntity(now))
             db.planDao().insert(planEntity(result, today, PlanSource.MANUAL, reason, now))
         }
+    }
+
+    /** The user's notes for the coach; changing them never touches the plan. */
+    suspend fun setNotes(text: String) {
+        val current = db.profileDao().get() ?: return
+        db.profileDao().upsert(current.copy(notes = text.trim().take(1500), updatedAt = clock.instant()))
     }
 
     /** Changes only the training days; the calorie plan is left to the weekly review. */

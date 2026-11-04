@@ -23,7 +23,7 @@ class BloomApp : Application(), Configuration.Provider {
     override fun onCreate() {
         super.onCreate()
         MapLibre.getInstance(this)
-        // Keeps reminder times right after updates, time changes or settings edits made while closed.
-        scope.launch { runCatching { reminders.rescheduleAll() } }
+        // KEEP: never cancel a reminder the system just started this process to deliver.
+        scope.launch { runCatching { reminders.rescheduleAll(androidx.work.ExistingWorkPolicy.KEEP) } }
     }
 }

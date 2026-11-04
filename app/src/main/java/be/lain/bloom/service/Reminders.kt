@@ -88,12 +88,16 @@ class Reminders @Inject constructor(
             ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED) &&
             NotificationManagerCompat.from(context).areNotificationsEnabled()
 
-    suspend fun rescheduleAll() {
+    /**
+     * [ExistingWorkPolicy.REPLACE] after settings change; [ExistingWorkPolicy.KEEP] at app start, because
+     * the process is often started *to run* a due reminder and replacing it would cancel that run.
+     */
+    suspend fun rescheduleAll(policy: ExistingWorkPolicy = ExistingWorkPolicy.REPLACE) {
         val s = settings.settings.first()
-        Reminder.entries.forEach { schedule(it, s) }
+        Reminder.entries.forEach { schedule(it, s, policy) }
     }
 
-    fun schedule(r: Reminder, s: AppSettings) {
+    fun schedule(r: Reminder, s: AppSettings, policy: ExistingWorkPolicy = ExistingWorkPolicy.REPLACE) {
         val wm = WorkManager.getInstance(context)
         val name = "reminder_${r.name.lowercase()}"
         if (!s.enabled(r)) {
@@ -107,7 +111,7 @@ class Reminders @Inject constructor(
             .setInputData(workDataOf(ReminderWorker.TYPE to r.name))
             .addTag("reminder")
             .build()
-        wm.enqueueUniqueWork(name, ExistingWorkPolicy.REPLACE, req)
+        wm.enqueueUniqueWork(name, policy, req)
     }
 
     /** A one-off nudge the coach scheduled at the user's request. */
@@ -200,7 +204,8 @@ class ReminderWorker @AssistedInject constructor(
         val r = inputData.getString(TYPE)?.let { runCatching { Reminder.valueOf(it) }.getOrNull() } ?: return Result.success()
         val s = settings.settings.first()
         if (s.enabled(r)) runCatching { message(r)?.let { (title, text) -> reminders.post(r, title, text) } }
-        reminders.schedule(r, settings.settings.first())
+        // Queue the next one after this run; REPLACE would cancel the work that is running right now.
+        reminders.schedule(r, settings.settings.first(), ExistingWorkPolicy.APPEND_OR_REPLACE)
         return Result.success()
     }
 
