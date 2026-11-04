@@ -79,7 +79,8 @@ class WorkoutPreviewViewModel @AssistedInject constructor(
 ) : ViewModel() {
     @AssistedFactory interface Factory { fun create(key: Route.WorkoutPreview): WorkoutPreviewViewModel }
 
-    val session = Program.phase(key.phase).sessions.first { it.id == key.session }
+    val program = be.lain.bloom.domain.training.Programs.byId(key.program)
+    val session = program.phase(key.phase).sessions.firstOrNull { it.id == key.session } ?: program.phase(key.phase).sessions.first()
     private val lastResults = MutableStateFlow<Map<String, List<SetResult>>>(emptyMap())
     private val _started = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
     val started = _started.asSharedFlow()
@@ -89,7 +90,7 @@ class WorkoutPreviewViewModel @AssistedInject constructor(
             BlockView(
                 block.kind.label,
                 block.items.mapIndexed { i, p ->
-                    val slot = Program.slotKey(key.phase, session.id, b, i)
+                    val slot = program.slotKey(key.phase, session.id, b, i)
                     val ex = choices[slot] ?: p.exerciseId
                     val l = last[slot].orEmpty().filter { it.exerciseId == ex }
                     SlotView(slot, p.exerciseId, ex, p, l, Progression.suggest(p, ex, l))
@@ -104,7 +105,7 @@ class WorkoutPreviewViewModel @AssistedInject constructor(
             val map = HashMap<String, List<SetResult>>()
             session.blocks.forEachIndexed { b, block ->
                 block.items.indices.forEach { i ->
-                    val slot = Program.slotKey(key.phase, session.id, b, i)
+                    val slot = program.slotKey(key.phase, session.id, b, i)
                     map[slot] = repo.lastForSlot(slot).map {
                         SetResult(0, it.exerciseId, it.slotKey, it.setIndex, it.side, it.reps, it.seconds, it.effort, it.skipped)
                     }
@@ -117,7 +118,7 @@ class WorkoutPreviewViewModel @AssistedInject constructor(
     fun swap(slot: SlotView, to: String) = viewModelScope.launch { repo.setChoice(slot.slotKey, to, slot.defaultId) }
 
     fun start() = viewModelScope.launch {
-        manager.start(key.phase, session)
+        manager.start(program, key.phase, session)
         _started.tryEmit(Unit)
     }
 }

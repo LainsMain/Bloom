@@ -46,6 +46,7 @@ import javax.inject.Singleton
 import kotlin.math.roundToInt
 
 data class ActiveWorkout(
+    val program: be.lain.bloom.domain.training.TrainingProgram,
     val phase: Int,
     val session: Session,
     val startedAt: Instant,
@@ -69,17 +70,17 @@ class WorkoutManager @Inject constructor(
     val active: StateFlow<ActiveWorkout?> = _active.asStateFlow()
     @Volatile var pauseBeforeExercise = false
 
-    suspend fun start(phase: Int, session: Session) {
+    suspend fun start(program: be.lain.bloom.domain.training.TrainingProgram, phase: Int, session: Session) {
         training.ensureStarted()
         val prefs = settings.settings.first()
         speaker.enabled = prefs.voiceCues
         pauseBeforeExercise = prefs.pauseBeforeExercise
         speaker.warmUp()
         val choices = training.choices.first()
-        val steps = WorkoutPlan.steps(session, phase, training.choicesFor(choices))
+        val steps = WorkoutPlan.steps(session, phase, program, training.choicesFor(choices))
         val cues = engine.start(steps)
         if (pauseBeforeExercise) engine.setPaused(true)
-        _active.value = ActiveWorkout(phase, session, clock.instant(), engine.state!!)
+        _active.value = ActiveWorkout(program, phase, session, clock.instant(), engine.state!!)
         handle(cues)
         context.startForegroundService(Intent(context, WorkoutService::class.java))
     }
@@ -135,6 +136,7 @@ class WorkoutManager @Inject constructor(
                 date = LocalDate.now(clock), startedAt = a.startedAt, endedAt = clock.instant(), phase = a.phase,
                 sessionId = a.session.id, name = a.session.name, activeSeconds = seconds,
                 kcal = Progression.kcal(weight, seconds / 60.0), setsDone = done, setsPlanned = work.size, rpe = rpe, notes = notes.trim(),
+                programId = a.program.id,
             ),
             p.results.values,
         )

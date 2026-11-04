@@ -158,11 +158,13 @@ class CoachTools @Inject constructor(
         add(DeepSeek.tool("propose_training_change",
             "Suggest a change to the training plan. Shown as a card; nothing changes until the user taps Accept. " +
                 "change is one of: advance_strength_phase, restart_strength_phase, previous_strength_phase, " +
-                "repeat_run_week (go back one week in the run-walk program), set_training_days (needs strength_days and run_days).",
+                "repeat_run_week (go back one week in the run-walk program), set_training_days (needs strength_days and run_days), " +
+                "switch_program (needs program: one of ${be.lain.bloom.domain.training.Programs.all.joinToString { it.id }}).",
             buildJsonObject {
                 put("change", DeepSeek.prop("string", "Which change"))
                 put("strength_days", DeepSeek.prop("string", "For set_training_days: comma-separated weekdays, e.g. mon,wed,fri"))
                 put("run_days", DeepSeek.prop("string", "For set_training_days: comma-separated weekdays, may be empty"))
+                put("program", DeepSeek.prop("string", "For switch_program: the program id"))
                 put("reason", DeepSeek.prop("string", "One-sentence reason shown to the user"))
             }, listOf("change", "reason")))
         more.get().definitions().forEach { add(it) }
@@ -433,7 +435,7 @@ class CoachTools @Inject constructor(
     private suspend fun proposeTraining(chatId: Long, a: JsonObject): String {
         val change = a.s("change").lowercase()
         val status = strength.get().status.first()
-        val phases = be.lain.bloom.domain.training.Program.phases
+        val phases = status.program.phases
         val summary = when (change) {
             "advance_strength_phase" -> {
                 if (status.phase.index >= phases.lastIndex) return err("Already in the last phase")
@@ -457,10 +459,17 @@ class CoachTools @Inject constructor(
                 if (st.isEmpty()) return err("strength_days must list at least one weekday")
                 "Strength on ${AiJson.daysLabel(st)}" + if (run.isEmpty()) ", no run days" else "; run-walk on ${AiJson.daysLabel(run)}"
             }
+            "switch_program" -> {
+                val target = be.lain.bloom.domain.training.Programs.all.firstOrNull { it.id == a.s("program") }
+                    ?: return err("program must be one of ${be.lain.bloom.domain.training.Programs.all.joinToString { it.id }}")
+                if (target.id == status.program.id) return err("That's already the current program")
+                "Switch to ${target.name}: ${target.tagline.lowercase()}, ${target.sessionsPerWeek}× a week"
+            }
             else -> return err("Unknown change '$change'")
         }
         val payload = buildJsonObject {
             put("change", change); put("reason", a.s("reason"))
+            if (change == "switch_program") put("program", a.s("program"))
             if (change == "set_training_days") {
                 val st = AiJson.parseDays(a.s("strength_days"))
                 put("strength_days", st.joinToString(",") { it.name })
@@ -599,6 +608,7 @@ class AiActions @Inject constructor(
             "restart_strength_phase" -> strength.setPhase(phase)
             "previous_strength_phase" -> strength.setPhase(phase - 1)
             "repeat_run_week" -> running.setProgramIndex(((running.programIndex.first() / 3) - 1).coerceAtLeast(0) * 3)
+            "switch_program" -> p["program"]?.jsonPrimitive?.contentOrNull?.let { strength.setProgram(it) }
             "set_training_days" -> {
                 fun days(k: String) = p[k]?.jsonPrimitive?.contentOrNull.orEmpty().split(',')
                     .mapNotNull { n -> java.time.DayOfWeek.entries.firstOrNull { it.name == n.trim() } }.toSet()

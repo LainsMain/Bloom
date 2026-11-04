@@ -409,7 +409,7 @@ class MoreTools @Inject constructor(
             })
             put("next_session", buildJsonObject {
                 val s = st.next
-                put("program", "${Program.NAME}, phase ${st.phase.index + 1}/${Program.phases.size} ${st.phase.name}, week ${st.week} of ${st.phase.weeks}")
+                put("program", "${st.program.name}, phase ${st.phase.index + 1}/${st.program.phases.size} ${st.phase.name}, week ${st.week} of ${st.phase.weeks}")
                 put("ready_to_advance", st.readyToAdvance)
                 put("session", "${s.id}: ${s.name} (${s.focus}), about ${s.estimateMinutes()} min")
                 put("blocks", buildJsonArray {
@@ -418,7 +418,7 @@ class MoreTools @Inject constructor(
                             put("block", block.kind.label)
                             put("exercises", buildJsonArray {
                                 block.items.forEachIndexed { i, p ->
-                                    val slot = Program.slotKey(st.phase.index, s.id, b, i)
+                                    val slot = st.program.slotKey(st.phase.index, s.id, b, i)
                                     val exId = choices[slot] ?: p.exerciseId
                                     val last = training.lastForSlot(slot)
                                     add(buildJsonObject {
@@ -470,7 +470,7 @@ class MoreTools @Inject constructor(
             val slot = session?.let { s ->
                 s.blocks.withIndex().firstNotNullOfOrNull { (b, block) ->
                     block.items.withIndex().firstOrNull { (_, p) -> p.exerciseId == exId || Exercises.find(p.exerciseId)?.ladder?.let { it == Exercises.find(exId)?.ladder } == true }
-                        ?.let { (i, _) -> Program.slotKey(st.phase.index, s.id, b, i) }
+                        ?.let { (i, _) -> st.program.slotKey(st.phase.index, s.id, b, i) }
                 }
             } ?: "manual:$exId"
             val effort = when (e.s("effort").lowercase()) { "easy" -> Effort.EASY; "hard" -> Effort.HARD; "good" -> Effort.GOOD; else -> null }
@@ -489,7 +489,7 @@ class MoreTools @Inject constructor(
                 date = date, startedAt = start, endedAt = start.plusSeconds(minutes * 60L), phase = st.phase.index,
                 sessionId = sessionId ?: "manual", name = a.s("name").ifBlank { session?.name ?: "Workout" }, activeSeconds = minutes * 60,
                 kcal = Progression.kcal(weight, minutes.toDouble()), setsDone = sets.size, setsPlanned = sets.size,
-                rpe = a.d("rpe")?.roundToInt()?.coerceIn(1, 10), notes = notes,
+                rpe = a.d("rpe")?.roundToInt()?.coerceIn(1, 10), notes = notes, programId = st.program.id,
             ),
             sets,
         )

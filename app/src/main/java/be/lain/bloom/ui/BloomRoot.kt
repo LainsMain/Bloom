@@ -205,6 +205,7 @@ fun MainShell(messages: AppMessages, deepLinks: be.lain.bloom.service.DeepLinks)
                 }
                 entry<Route.WorkoutPreview> { key -> WorkoutPreviewScreen(key, onBack = back, navigate = navigate, replace = replace) }
                 entry<Route.WorkoutPlayer> { WorkoutPlayerScreen(onBack = back) }
+                entry<Route.Programs> { be.lain.bloom.feature.train.ProgramsScreen(onBack = back) }
                 entry<Route.ExerciseLibrary> { ExerciseLibraryScreen(onBack = back, navigate = navigate) }
                 entry<Route.ExerciseDetail> { key -> ExerciseDetailScreen(key, onBack = back, navigate = navigate) }
                 entry<Route.RunActive> { key -> RunActiveScreen(key, onBack = back, replace = replace) }

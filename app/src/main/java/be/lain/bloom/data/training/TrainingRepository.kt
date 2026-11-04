@@ -41,6 +41,7 @@ import javax.inject.Singleton
 data class DemoVideo(val id: String, val title: String, val channel: String, val custom: Boolean)
 
 data class ProgramStatus(
+    val program: be.lain.bloom.domain.training.TrainingProgram,
     val phase: Phase,
     val phaseStart: LocalDate,
     val week: Int,
@@ -88,14 +89,15 @@ class TrainingRepository @Inject constructor(
     }
 
     val status: Flow<ProgramStatus> = settings.settings.flatMapLatest { s ->
+        val program = be.lain.bloom.domain.training.Programs.byId(s.programId)
         val start = s.phaseStartEpochDay?.let(LocalDate::ofEpochDay) ?: LocalDate.now(clock)
-        val phase = Program.phase(s.programPhase)
-        dao.observeCountInPhase(phase.index, start).map { count ->
+        val phase = program.phase(s.programPhase)
+        dao.observeCountInPhase(program.id, phase.index, start).map { count ->
             val week = (ChronoUnit.DAYS.between(start, LocalDate.now(clock)) / 7 + 1).toInt().coerceAtLeast(1)
             ProgramStatus(
-                phase = phase, phaseStart = start, week = week, workoutsInPhase = count,
+                program = program, phase = phase, phaseStart = start, week = week, workoutsInPhase = count,
                 next = phase.sessions[count % phase.sessions.size],
-                readyToAdvance = phase.index < Program.phases.lastIndex && week > phase.weeks && count >= phase.weeks * 2,
+                readyToAdvance = program.readyToAdvance(phase, week, count),
             )
         }
     }
@@ -104,7 +106,13 @@ class TrainingRepository @Inject constructor(
         if (settings.settings.first().phaseStartEpochDay == null) settings.setPhase(0, LocalDate.now(clock).toEpochDay())
     }
 
-    suspend fun setPhase(index: Int) = settings.setPhase(index.coerceIn(0, Program.phases.lastIndex), LocalDate.now(clock).toEpochDay())
+    suspend fun setPhase(index: Int) {
+        val program = be.lain.bloom.domain.training.Programs.byId(settings.settings.first().programId)
+        settings.setPhase(index.coerceIn(0, program.phases.lastIndex), LocalDate.now(clock).toEpochDay())
+    }
+
+    /** Switches to another program, resuming its saved phase if it was used before. */
+    suspend fun setProgram(id: String) = settings.setProgram(be.lain.bloom.domain.training.Programs.byId(id).id, LocalDate.now(clock).toEpochDay())
 
     suspend fun lastForSlot(slot: String) = dao.lastForSlot(slot)
 
@@ -134,9 +142,11 @@ class StrengthContext @Inject constructor(private val repo: TrainingRepository) 
         val list = repo.workoutsBetween(from, to)
         return buildJsonObject {
             put("strength_program", buildJsonObject {
-                put("name", Program.NAME)
-                put("phase", "${st.phase.index + 1}/${Program.phases.size} ${st.phase.name} (week ${st.week} of ${st.phase.weeks})")
+                put("name", st.program.name)
+                put("phase", "${st.phase.index + 1}/${st.program.phases.size} ${st.phase.name} (week ${st.week} of ${st.phase.weeks})")
                 put("phase_summary", st.phase.summary)
+                put("other_programs", be.lain.bloom.domain.training.Programs.all.filter { it.id != st.program.id }
+                    .joinToString("; ") { "${it.id}: ${it.name} (${it.tagline}, ${it.sessionsPerWeek}×/week, ${it.level})" })
                 put("workouts_in_phase", st.workoutsInPhase)
                 put("next_session", st.next.name)
             })

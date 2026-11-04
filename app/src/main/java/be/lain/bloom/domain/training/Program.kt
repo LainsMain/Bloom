@@ -37,14 +37,45 @@ data class Session(val id: String, val name: String, val focus: String, val bloc
 
 data class Phase(val index: Int, val name: String, val weeks: Int, val summary: String, val sessions: List<Session>)
 
+/** A selectable strength program. Each keeps its own phase, progress and exercise swaps. */
+data class TrainingProgram(
+    val id: String,
+    val name: String,
+    val tagline: String,
+    val description: String,
+    val level: String,
+    val sessionsPerWeek: Int,
+    val focus: List<String>,
+    val equipment: String,
+    val phases: List<Phase>,
+) {
+    fun phase(i: Int): Phase = phases[i.coerceIn(0, phases.lastIndex)]
+
+    /** The original program keeps its old keys so existing swaps and history still match. */
+    fun slotKey(phase: Int, session: String, blockIdx: Int, itemIdx: Int): String =
+        (if (id == Program.ID) "" else "$id:") + "p$phase-$session-b$blockIdx-i$itemIdx"
+
+    /** Rough session length range across phases, e.g. "26–35 min". */
+    fun minutes(): String {
+        val all = phases.flatMap { ph -> ph.sessions.map { it.estimateMinutes() } }
+        val lo = all.min(); val hi = all.max()
+        return if (lo == hi) "$lo min" else "$lo–$hi min"
+    }
+
+    /** Enough weeks and workouts in this phase to move on. */
+    fun readyToAdvance(phase: Phase, week: Int, workouts: Int): Boolean =
+        phase.index < phases.lastIndex && week > phase.weeks && workouts >= phase.weeks * maxOf(2, sessionsPerWeek - 1)
+}
+
 /**
  * "Feminine Shape – Bodyweight": 3×/week full body at home, glute/hip emphasis, deep core, posture.
  * Sessions alternate A/B. Each phase raises volume and moves up the variation ladders.
  */
 object Program {
+    const val ID = "feminine-shape"
     const val NAME = "Feminine Shape · Bodyweight"
 
-    private fun warmup(extra: String? = null) = Block(
+    internal fun warmup(extra: String? = null) = Block(
         BlockKind.WARMUP,
         listOfNotNull(
             Prescription("march-in-place", 1, seconds = 60, restSec = 0),
@@ -56,7 +87,7 @@ object Program {
         ),
     )
 
-    private val cooldown = Block(
+    internal val cooldown = Block(
         BlockKind.COOLDOWN,
         listOf(
             Prescription("hip-flexor-stretch", 1, seconds = 25, restSec = 0),
@@ -65,8 +96,8 @@ object Program {
         ),
     )
 
-    private fun p(id: String, sets: Int, min: Int, max: Int, rest: Int = 60, note: String = "") = Prescription(id, sets, min, max, restSec = rest, note = note)
-    private fun t(id: String, sets: Int, sec: Int, rest: Int = 45, note: String = "") = Prescription(id, sets, seconds = sec, restSec = rest, note = note)
+    internal fun p(id: String, sets: Int, min: Int, max: Int, rest: Int = 60, note: String = "") = Prescription(id, sets, min, max, restSec = rest, note = note)
+    internal fun t(id: String, sets: Int, sec: Int, rest: Int = 45, note: String = "") = Prescription(id, sets, seconds = sec, restSec = rest, note = note)
 
     val phases: List<Phase> = listOf(
         Phase(
@@ -186,6 +217,15 @@ object Program {
 
     fun phase(i: Int): Phase = phases[i.coerceIn(0, phases.lastIndex)]
 
-    /** Stable key for an exercise slot, so a swapped variation sticks to that slot. */
-    fun slotKey(phase: Int, session: String, blockIdx: Int, itemIdx: Int) = "p$phase-$session-b$blockIdx-i$itemIdx"
+    val program = TrainingProgram(
+        id = ID,
+        name = NAME,
+        tagline = "Glutes, hips, deep core and posture",
+        description = "The all-round shape program: full body three times a week with extra glute and core work, from your very first session to advanced variations.",
+        level = "Beginner → advanced",
+        sessionsPerWeek = 3,
+        focus = listOf("Glutes & hips", "Core", "Posture"),
+        equipment = "A chair, a low step and a sturdy table",
+        phases = phases,
+    )
 }

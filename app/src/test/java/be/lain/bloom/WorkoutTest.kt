@@ -36,6 +36,34 @@ class WorkoutTest {
         }
     }
 
+    @Test fun everyCatalogueProgramIsValid() {
+        val ids = be.lain.bloom.domain.training.Programs.all.map { it.id }
+        assertEquals("program ids are unique", ids.size, ids.toSet().size)
+        be.lain.bloom.domain.training.Programs.all.forEach { prog ->
+            assertTrue(prog.phases.isNotEmpty())
+            prog.phases.forEachIndexed { i, ph ->
+                assertEquals("${prog.id} phase index", i, ph.index)
+                assertTrue("${prog.id} ${ph.name} has sessions", ph.sessions.isNotEmpty())
+                assertEquals("${prog.id} session ids unique", ph.sessions.size, ph.sessions.map { it.id }.toSet().size)
+                ph.sessions.forEach { s ->
+                    s.blocks.forEach { b -> b.items.forEach { Exercises[it.exerciseId] } }
+                    // Every session also produces a playable plan.
+                    assertTrue(WorkoutPlan.steps(s, ph.index, program = prog).isNotEmpty())
+                    val m = s.estimateMinutes()
+                    val range = if (prog.id == "quick-15") 10..20 else 15..40
+                    assertTrue("${prog.id} ${s.name} is $m min", m in range)
+                }
+            }
+        }
+    }
+
+    @Test fun slotKeysStayCompatibleAndSeparate() {
+        // The original program keeps its old keys (existing swaps and history), others are namespaced.
+        assertEquals("p0-A-b1-i0", Program.program.slotKey(0, "A", 1, 0))
+        assertEquals("glute-builder:p0-A-b1-i0", be.lain.bloom.domain.training.Programs.gluteBuilder.slotKey(0, "A", 1, 0))
+        assertEquals(Program.program, be.lain.bloom.domain.training.Programs.byId("nope"))
+    }
+
     @Test fun stepsIncludeSidesRestsAndGetReady() {
         val s = Program.phase(0).sessions[0]
         val steps = WorkoutPlan.steps(s, 0)

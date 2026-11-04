@@ -38,11 +38,16 @@ data class SetResult(
 
 object WorkoutPlan {
     /** Flattens a session into timed/rep steps. [choice] returns the variation chosen for a slot. */
-    fun steps(session: Session, phase: Int, choice: (slotKey: String, default: String) -> String = { _, d -> d }): List<Step> {
+    fun steps(
+        session: Session,
+        phase: Int,
+        program: TrainingProgram = Program.program,
+        choice: (slotKey: String, default: String) -> String = { _, d -> d },
+    ): List<Step> {
         val out = mutableListOf<Step>()
         session.blocks.forEachIndexed { b, block ->
             block.items.forEachIndexed { i, p ->
-                val slot = Program.slotKey(phase, session.id, b, i)
+                val slot = program.slotKey(phase, session.id, b, i)
                 val exId = choice(slot, p.exerciseId)
                 val ex = Exercises[exId]
                 val circuit = block.kind == BlockKind.WARMUP || block.kind == BlockKind.COOLDOWN
@@ -58,7 +63,7 @@ object WorkoutPlan {
                     }
                     val lastOfBlock = i == block.items.lastIndex && s == p.sets
                     if (!circuit && p.restSec > 0 && !lastOfBlock) {
-                        val next = if (s < p.sets) exId else choice(Program.slotKey(phase, session.id, b, i + 1), block.items[i + 1].exerciseId)
+                        val next = if (s < p.sets) exId else choice(program.slotKey(phase, session.id, b, i + 1), block.items[i + 1].exerciseId)
                         out += Step(StepType.REST, next, slot, block.kind, s, p.sets, seconds = p.restSec)
                     }
                 }
