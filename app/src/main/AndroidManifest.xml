@@ -99,6 +99,13 @@
         <receiver
             android:name=".data.update.InstallResultReceiver"
             android:exported="false" />
+        <receiver
+            android:name=".data.update.UpdatedReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
 
         <!-- WorkManager is initialised by BloomApp (Hilt worker factory). -->
         <provider
