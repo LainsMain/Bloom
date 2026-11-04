@@ -73,6 +73,8 @@ data class WeekData(
     val previousMeasurement: MeasurementEntity?,
     val strengthPhase: String,
     val strengthReady: Boolean,
+    /** Cycle summary when tracking is on (null otherwise). */
+    val cycle: kotlinx.serialization.json.JsonObject? = null,
 ) {
     val workoutsPlanned: Int get() = profile.strengthDays.size
     val runsPlanned: Int get() = profile.runDays.size
@@ -100,6 +102,7 @@ class ReviewRepository @Inject constructor(
     private val training: TrainingRepository,
     private val runs: RunRepository,
     private val settings: SettingsRepository,
+    private val cycle: be.lain.bloom.data.cycle.CycleRepository,
     private val clock: Clock,
 ) {
     private val dao get() = db.reviewDao()
@@ -157,6 +160,7 @@ class ReviewRepository @Inject constructor(
             previousMeasurement = measurements.dropLast(1).lastOrNull(),
             strengthPhase = "${phase.name} (phase ${phase.index + 1} of ${Program.phases.size}, week ${st.week} of ${phase.weeks})",
             strengthReady = st.readyToAdvance,
+            cycle = cycle.summary(reviewDate).takeIf { cycle.enabled.first() },
         )
     }
 
@@ -172,6 +176,7 @@ class ReviewRepository @Inject constructor(
                 currentTargetKcal = plan?.targets?.kcal ?: week.plan?.targets?.kcal ?: 0,
                 priorExpenditure = plan?.expenditureKcal ?: 0,
                 reviewDate = week.reviewDate,
+                cycleSwing = cycle.waterRetention(week.reviewDate) || cycle.waterRetention(week.weekStart),
             ),
         )
     }
@@ -303,6 +308,7 @@ class ReviewRepository @Inject constructor(
                     }
                 })
             }
+            week.cycle?.let { put("cycle", it) }
             put("check_in_1_to_5", buildJsonObject {
                 checkIn.energy?.let { put("energy", it) }; checkIn.hunger?.let { put("hunger", it) }
                 checkIn.sleep?.let { put("sleep", it) }; checkIn.soreness?.let { put("soreness", it) }

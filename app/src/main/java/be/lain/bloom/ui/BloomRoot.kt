@@ -215,6 +215,7 @@ fun MainShell(messages: AppMessages, deepLinks: be.lain.bloom.service.DeepLinks)
                 entry<Route.QuickLog> { key -> QuickLogScreen(key, onBack = back) }
                 entry<Route.Settings> { SettingsScreen(onBack = back, navigate = navigate) }
                 entry<Route.EditProfile> { EditProfileScreen(onBack = back) }
+                entry<Route.Cycle> { be.lain.bloom.feature.cycle.CycleScreen(onBack = back) }
                 entry<Route.WeeklyReview> { be.lain.bloom.feature.review.WeeklyReviewScreen(onClose = back) }
                 entry<Route.ReviewDetail> { key -> be.lain.bloom.feature.review.ReviewDetailScreen(key, onBack = back) }
             },

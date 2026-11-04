@@ -95,30 +95,7 @@ fun Thumb(path: String, size: Int, modifier: Modifier = Modifier) {
     }
 }
 
-@Composable
-fun UserBubble(text: String, images: List<String>) {
-    Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.End) {
-        if (images.isNotEmpty()) {
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) { images.forEach { Thumb(it, 120) } }
-            Spacer(Modifier.height(6.dp))
-        }
-        if (text.isNotBlank()) {
-            Surface(
-                shape = RoundedCornerShape(24.dp, 24.dp, 6.dp, 24.dp),
-                color = MaterialTheme.colorScheme.primaryContainer,
-                modifier = Modifier.widthIn(max = 320.dp),
-            ) {
-                Text(text, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onPrimaryContainer,
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp))
-            }
-        }
-    }
-}
 
-@Composable
-fun AssistantBubble(text: String) {
-    MarkdownText(text, Modifier.fillMaxWidth().padding(end = 24.dp))
-}
 
 @Composable
 fun ToolChips(names: List<String>) {
@@ -155,6 +132,9 @@ private fun toolLabel(n: String) = when (n) {
     "get_nutrition_averages" -> "📊 nutrition history"
     "copy_meal" -> "📋 copied meal"
     "schedule_reminder" -> "⏰ reminder"
+    "read_barcode_from_photo" -> "🏷 read barcode"
+    "get_cycle" -> "🌸 cycle"
+    "log_period", "log_cycle_symptoms" -> "🌸 updated cycle"
     else -> n
 }
 
@@ -248,53 +228,6 @@ fun cameraUri(context: Context): Uri {
     return FileProvider.getUriForFile(context, "${context.packageName}.files", file)
 }
 
-@Composable
-fun ChatInput(
-    text: String,
-    onText: (String) -> Unit,
-    attachments: List<String>,
-    onRemoveAttachment: (String) -> Unit,
-    run: RunState,
-    pickers: PhotoPickers,
-    onSend: () -> Unit,
-    onStop: () -> Unit,
-    placeholder: String,
-    modifier: Modifier = Modifier,
-) {
-    Column(modifier) {
-        if (attachments.isNotEmpty()) {
-            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(bottom = 8.dp)) {
-                items(attachments) { p ->
-                    Box {
-                        Thumb(p, 72)
-                        Surface(onClick = { onRemoveAttachment(p) }, shape = MaterialTheme.shapes.small, color = MaterialTheme.colorScheme.inverseSurface,
-                            modifier = Modifier.align(Alignment.TopEnd).size(24.dp)) {
-                            Icon(Icons.Rounded.Close, "Remove photo", tint = MaterialTheme.colorScheme.inverseOnSurface, modifier = Modifier.padding(3.dp))
-                        }
-                    }
-                }
-            }
-        }
-        Row(verticalAlignment = Alignment.Bottom) {
-            IconButton(onClick = pickers.camera) { Icon(Icons.Rounded.AddAPhoto, "Take a photo") }
-            IconButton(onClick = pickers.gallery) { Icon(Icons.Rounded.PhotoLibrary, "Choose photos") }
-            TextField(
-                value = text, onValueChange = onText, placeholder = { Text(placeholder) }, maxLines = 5,
-                shape = MaterialTheme.shapes.extraLarge,
-                colors = TextFieldDefaults.colors(focusedIndicatorColor = Color.Transparent, unfocusedIndicatorColor = Color.Transparent),
-                modifier = Modifier.weight(1f),
-            )
-            Spacer(Modifier.width(6.dp))
-            if (run.busy) {
-                FilledIconButton(onClick = onStop, modifier = Modifier.size(52.dp)) { Icon(Icons.Rounded.Stop, "Stop") }
-            } else {
-                FilledIconButton(onClick = onSend, enabled = text.isNotBlank() || attachments.isNotEmpty(), modifier = Modifier.size(52.dp)) {
-                    Icon(Icons.AutoMirrored.Rounded.Send, "Send")
-                }
-            }
-        }
-    }
-}
 
 @Composable
 fun ApiKeyCard(onSave: (String) -> Unit) {

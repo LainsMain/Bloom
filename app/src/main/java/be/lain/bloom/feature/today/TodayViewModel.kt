@@ -75,6 +75,7 @@ class TodayViewModel @Inject constructor(
     health: be.lain.bloom.data.health.HealthSync,
     reviews: be.lain.bloom.data.review.ReviewRepository,
     runs: be.lain.bloom.data.training.RunRepository,
+    private val cycle: be.lain.bloom.data.cycle.CycleRepository,
     settings: SettingsRepository,
     private val clock: Clock,
 ) : ViewModel() {
@@ -123,6 +124,8 @@ class TodayViewModel @Inject constructor(
     val steps = date.flatMapLatest { health.dao.observeDay(it) }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
     val otherSessions = date.flatMapLatest { health.dao.observeSessions(it) }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
+    val cycleState = date.flatMapLatest { cycle.state(it) }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+    fun setPeriodToday(on: Boolean) = viewModelScope.launch { cycle.setPeriod(date.value, on) }
     val runPlan = runs.activePlan.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
     val reviewDue = date.flatMapLatest { reviews.dueOn(it) }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
 

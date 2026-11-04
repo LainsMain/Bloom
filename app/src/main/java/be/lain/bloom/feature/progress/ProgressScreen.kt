@@ -112,6 +112,7 @@ fun ProgressScreen(navigate: (be.lain.bloom.ui.Route) -> Unit, vm: ProgressViewM
                         points = state.points,
                         goalKg = profile?.goalWeightKg?.takeIf { state.showProjection },
                         projection = state.projection,
+                        periodDays = extras.periodDays,
                     )
                     if (state.plannedGoalDate != null) {
                         Spacer(Modifier.height(12.dp))

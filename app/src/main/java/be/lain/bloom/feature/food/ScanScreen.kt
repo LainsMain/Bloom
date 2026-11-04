@@ -25,6 +25,7 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
@@ -33,6 +34,7 @@ import androidx.compose.material.icons.rounded.EditNote
 import androidx.compose.material.icons.rounded.FlashlightOff
 import androidx.compose.material.icons.rounded.FlashlightOn
 import androidx.compose.material.icons.rounded.Keyboard
+import androidx.compose.material.icons.rounded.PhotoLibrary
 import androidx.compose.material.icons.rounded.QrCodeScanner
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -110,6 +112,7 @@ sealed interface ScanState {
 class ScanViewModel @AssistedInject constructor(
     @Assisted val key: Route.Scan,
     private val repo: FoodRepository,
+    private val photoBarcodes: be.lain.bloom.data.ai.PhotoBarcodes,
 ) : ViewModel() {
     @AssistedFactory interface Factory { fun create(key: Route.Scan): ScanViewModel }
 
@@ -131,6 +134,16 @@ class ScanViewModel @AssistedInject constructor(
     }
 
     fun rescan() { _state.value = ScanState.Scanning }
+
+    val photoMessage = MutableStateFlow<String?>(null)
+
+    /** Reads a barcode from a picture the user already has (e.g. a screenshot or a photo of the pack). */
+    fun fromPhoto(uri: android.net.Uri) = viewModelScope.launch {
+        photoMessage.value = "Reading the photo…"
+        val code = photoBarcodes.scanUri(uri).firstOrNull()
+        if (code == null) photoMessage.value = "No barcode found in that photo. Try a sharper, closer one."
+        else { photoMessage.value = null; _state.value = ScanState.Scanning; onCode(code) }
+    }
 }
 
 @Composable
@@ -150,6 +163,8 @@ fun ScanScreen(
     var torch by remember { mutableStateOf(false) }
     var camera by remember { mutableStateOf<Camera?>(null) }
     var manual by remember { mutableStateOf(false) }
+    val photoMessage by vm.photoMessage.collectAsStateWithLifecycle()
+    val pickPhoto = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri -> uri?.let(vm::fromPhoto) }
 
     LaunchedEffect(Unit) { if (!granted) launcher.launch(Manifest.permission.CAMERA) }
     LaunchedEffect(Unit) {
@@ -183,6 +198,12 @@ fun ScanScreen(
         Row(Modifier.fillMaxWidth().statusBarsPadding().padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
             FilledTonalIconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Back") }
             Spacer(Modifier.weight(1f))
+            androidx.compose.material3.FilledTonalButton(onClick = {
+                pickPhoto.launch(androidx.activity.result.PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+            }) {
+                Icon(Icons.Rounded.PhotoLibrary, null); Spacer(Modifier.width(6.dp)); Text("From photo")
+            }
+            Spacer(Modifier.width(8.dp))
             if (granted) {
                 FilledTonalIconButton(onClick = { torch = !torch }) {
                     Icon(if (torch) Icons.Rounded.FlashlightOff else Icons.Rounded.FlashlightOn, if (torch) "Torch off" else "Torch on")
@@ -194,6 +215,12 @@ fun ScanScreen(
             Modifier.align(Alignment.BottomCenter).fillMaxWidth().navigationBarsPadding().padding(24.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
+            photoMessage?.let { m ->
+                Surface(shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.inverseSurface, modifier = Modifier.padding(bottom = 12.dp)) {
+                    Text(m, color = MaterialTheme.colorScheme.inverseOnSurface, style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp))
+                }
+            }
             Surface(shape = MaterialTheme.shapes.extraLarge, color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.92f)) {
                 Row(Modifier.padding(horizontal = 20.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                     when (val s = state) {

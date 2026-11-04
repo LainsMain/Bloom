@@ -222,6 +222,18 @@ fun SettingsScreen(onBack: () -> Unit, navigate: (Route) -> Unit, vm: SettingsVi
             item { SectionHeader("Weekly review & reminders") }
             item { RemindersCard(vm, s) }
 
+            item { SectionHeader("Cycle") }
+            item {
+                BloomCard(Modifier.fillMaxWidth()) {
+                    SwitchRow(
+                        "Track my cycle",
+                        "Log your period so your coach and weekly review can tell water weight from fat loss. Shows a card on Today.",
+                        s.cycleTracking, vm::setCycleTracking,
+                    )
+                    if (s.cycleTracking) TextButton(onClick = { navigate(Route.Cycle) }) { Text("Open cycle calendar") }
+                }
+            }
+
             item { SectionHeader("Training") }
             item {
                 BloomCard(Modifier.fillMaxWidth()) {

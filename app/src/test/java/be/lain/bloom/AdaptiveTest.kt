@@ -92,6 +92,13 @@ class AdaptiveTest {
         assertEquals(0.25, r.confidence, 0.05)
     }
 
+    @Test fun periodWaterWeightCountsForLess() {
+        val normal = Adaptive.review(input(weights(0.5), week(1800.0)))
+        val swing = Adaptive.review(input(weights(0.5), week(1800.0)).copy(cycleSwing = true))
+        assertEquals(normal.confidence / 2, swing.confidence, 1e-9)
+        assertTrue(swing.notes.any { "period" in it })
+    }
+
     @Test fun guessesDayStatus() {
         assertEquals(DayStatus.SKIPPED, Adaptive.guessStatus(0.0, 0, 0, 1700))
         assertEquals(DayStatus.COMPLETE, Adaptive.guessStatus(1500.0, 6, 3, 1700))
