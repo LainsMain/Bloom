@@ -58,6 +58,7 @@ class DeepLinks @Inject constructor() {
         const val WEIGH_IN = "weigh_in"
         const val FOOD = "food"
         const val TRAIN = "train"
+        const val COACH = "coach"
     }
 }
 
@@ -107,6 +108,41 @@ class Reminders @Inject constructor(
             .addTag("reminder")
             .build()
         wm.enqueueUniqueWork(name, ExistingWorkPolicy.REPLACE, req)
+    }
+
+    /** A one-off nudge the coach scheduled at the user's request. */
+    fun scheduleCustom(actionId: Long, at: LocalDateTime, message: String) {
+        val delay = Duration.between(LocalDateTime.now(clock), at).coerceAtLeast(Duration.ZERO)
+        val req = OneTimeWorkRequestBuilder<CoachReminderWorker>()
+            .setInitialDelay(delay)
+            .setInputData(workDataOf(CoachReminderWorker.MESSAGE to message, CoachReminderWorker.ID to actionId))
+            .addTag("coach_reminder")
+            .build()
+        WorkManager.getInstance(context).enqueueUniqueWork("coach_reminder_$actionId", ExistingWorkPolicy.REPLACE, req)
+    }
+
+    fun cancelCustom(workName: String) { WorkManager.getInstance(context).cancelUniqueWork(workName) }
+
+    @android.annotation.SuppressLint("MissingPermission") // canNotify() checks POST_NOTIFICATIONS first.
+    fun postCustom(id: Long, text: String) {
+        if (!canNotify()) return
+        val nm = context.getSystemService(NotificationManager::class.java)
+        nm.createNotificationChannel(NotificationChannel(CHANNEL, "Reminders", NotificationManager.IMPORTANCE_DEFAULT))
+        val intent = Intent(context, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
+            putExtra(DeepLinks.EXTRA, DeepLinks.COACH)
+        }
+        val pi = PendingIntent.getActivity(context, (5000 + id % 1000).toInt(), intent, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+        val n = NotificationCompat.Builder(context, CHANNEL)
+            .setSmallIcon(R.drawable.ic_launcher_monochrome)
+            .setContentTitle("From your coach")
+            .setContentText(text)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(text))
+            .setContentIntent(pi)
+            .setAutoCancel(true)
+            .setCategory(NotificationCompat.CATEGORY_REMINDER)
+            .build()
+        runCatching { NotificationManagerCompat.from(context).notify((NOTIFY_BASE + 100 + id % 1000).toInt(), n) }
     }
 
     @android.annotation.SuppressLint("MissingPermission") // canNotify() checks POST_NOTIFICATIONS first.
@@ -190,7 +226,8 @@ class ReminderWorker @AssistedInject constructor(
                 }
                 TrainingKind.RUN -> {
                     if (runs.runsBetween(today, today).isNotEmpty()) return null
-                    "Run-walk day" to "An easy run-walk today. Conversation pace is perfect."
+                    val plan = runs.activePlan.first().plan
+                    "Run day" to "${plan.name} today, about ${plan.totalSeconds / 60} minutes. Conversation pace is perfect."
                 }
                 TrainingKind.REST -> null
             }
@@ -198,4 +235,22 @@ class ReminderWorker @AssistedInject constructor(
     }
 
     companion object { const val TYPE = "type" }
+}
+
+@HiltWorker
+class CoachReminderWorker @AssistedInject constructor(
+    @Assisted context: Context,
+    @Assisted params: WorkerParameters,
+    private val reminders: Reminders,
+) : CoroutineWorker(context, params) {
+    override suspend fun doWork(): Result {
+        val text = inputData.getString(MESSAGE) ?: return Result.success()
+        reminders.postCustom(inputData.getLong(ID, 0), text)
+        return Result.success()
+    }
+
+    companion object {
+        const val MESSAGE = "message"
+        const val ID = "id"
+    }
 }

@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -27,6 +28,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
@@ -60,6 +62,8 @@ class RunningViewModel @Inject constructor(
     manager: RunManager,
 ) : ViewModel() {
     val programIndex = repo.programIndex.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0)
+    val active = repo.activePlan.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+    fun setActive(planId: Long?) = viewModelScope.launch { repo.setActivePlan(planId) }
     val plans = repo.plans.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     val runs = repo.runs.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     val live = manager.live
@@ -78,6 +82,8 @@ fun RunningPane(navigate: (Route) -> Unit, vm: RunningViewModel = hiltViewModel(
     val plans by vm.plans.collectAsStateWithLifecycle()
     val runs by vm.runs.collectAsStateWithLifecycle()
     val live by vm.live.collectAsStateWithLifecycle()
+    val active by vm.active.collectAsStateWithLifecycle()
+    var choosing by androidx.compose.runtime.saveable.rememberSaveable { androidx.compose.runtime.mutableStateOf(false) }
     val today = LocalDate.now()
     val monday = today.minusDays((today.dayOfWeek.value - 1).toLong())
     val week = runs.filter { !it.date.isBefore(monday) }
@@ -97,6 +103,40 @@ fun RunningPane(navigate: (Route) -> Unit, vm: RunningViewModel = hiltViewModel(
                 }
             }
         }
+        active?.takeIf { !it.isProgram }?.let { a ->
+            item {
+                BloomCard(Modifier.fillMaxWidth(), color = MaterialTheme.colorScheme.surfaceContainerHigh) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        ShapeIcon(MaterialShapes.Clover4Leaf, Icons.AutoMirrored.Rounded.DirectionsRun, size = 52.dp,
+                            container = MaterialTheme.colorScheme.tertiary, content = MaterialTheme.colorScheme.onTertiary)
+                        Spacer(Modifier.width(14.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text("My run plan", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.tertiary)
+                            Text(a.plan.name, style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.onSurface)
+                            Text("≈ ${formatDuration(a.plan.totalSeconds)}", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface)
+                        }
+                    }
+                    Spacer(Modifier.height(10.dp))
+                    Text(a.plan.summary(), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Spacer(Modifier.height(12.dp))
+                    Button(
+                        onClick = { navigate(Route.RunActive(a.key, a.plan.name)) },
+                        shapes = ButtonDefaults.shapes(),
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.tertiary, contentColor = MaterialTheme.colorScheme.onTertiary),
+                        modifier = Modifier.fillMaxWidth().height(ButtonDefaults.MediumContainerHeight),
+                    ) {
+                        Icon(Icons.Rounded.PlayArrow, null); Spacer(Modifier.width(8.dp))
+                        Text("Start run", style = ButtonDefaults.textStyleFor(ButtonDefaults.MediumContainerHeight))
+                    }
+                    Row {
+                        TextButton(onClick = { a.planId?.let { navigate(Route.RunPlanEditor(it)) } }) { Text("Edit") }
+                        Spacer(Modifier.weight(1f))
+                        TextButton(onClick = { choosing = true }) { Text("Change plan") }
+                    }
+                }
+            }
+        }
+        if (active?.isProgram != false) {
         item {
             BloomCard(Modifier.fillMaxWidth(), color = MaterialTheme.colorScheme.surfaceContainerHigh) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -132,7 +172,9 @@ fun RunningPane(navigate: (Route) -> Unit, vm: RunningViewModel = hiltViewModel(
                 }
                 Text("Repeat any run as often as you like — moving on when it feels comfortable is the whole idea.",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                if (plans.isNotEmpty()) TextButton(onClick = { choosing = true }) { Text("Use one of my plans instead") }
             }
+        }
         }
         item {
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -154,7 +196,7 @@ fun RunningPane(navigate: (Route) -> Unit, vm: RunningViewModel = hiltViewModel(
             item { SectionHeader("My interval plans") }
             items(plans, key = { "plan-${it.first.id}" }) { (e, plan) ->
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    FoodRow(plan.name, "≈ ${formatDuration(plan.totalSeconds)} · ${plan.summary()}", Modifier.weight(1f),
+                    FoodRow(plan.name + if (active?.planId == e.id) " · my plan" else "", "≈ ${formatDuration(plan.totalSeconds)} · ${plan.summary()}", Modifier.weight(1f),
                         onClick = { navigate(Route.RunPlanEditor(e.id)) })
                     FilledTonalButton(onClick = { navigate(Route.RunActive("plan:${e.id}", plan.name)) }) { Icon(Icons.Rounded.Timer, null); Text("Go") }
                 }
@@ -168,6 +210,27 @@ fun RunningPane(navigate: (Route) -> Unit, vm: RunningViewModel = hiltViewModel(
                     "${r.date.relative(today)} · ${(r.distanceM / 1000).fmt(2)} km · ${Geo.formatClock(r.movingSec)} · ${Geo.formatPace(Geo.pace(r.movingSec.toDouble(), r.distanceM))} /km",
                     onClick = { navigate(Route.RunDetail(r.id)) },
                 )
+            }
+        }
+    }
+    if (choosing) {
+        androidx.compose.material3.ModalBottomSheet(onDismissRequest = { choosing = false }) {
+            Column(Modifier.padding(horizontal = 24.dp).padding(bottom = 24.dp)) {
+                Text("Which plan do you want to follow?", style = MaterialTheme.typography.titleLarge)
+                Text("It shows at the top here and on your run days.", style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Spacer(Modifier.height(12.dp))
+                be.lain.bloom.core.designsystem.ChoiceCard(
+                    selected = active?.isProgram == true, onClick = { vm.setActive(null); choosing = false },
+                    title = RunProgram.NAME, description = "Built-in 9-week beginner program, ${RunProgram.runs.size} runs",
+                )
+                plans.forEach { (e, plan) ->
+                    Spacer(Modifier.height(8.dp))
+                    be.lain.bloom.core.designsystem.ChoiceCard(
+                        selected = active?.planId == e.id, onClick = { vm.setActive(e.id); choosing = false },
+                        title = plan.name, description = "≈ ${formatDuration(plan.totalSeconds)} · ${plan.summary()}",
+                    )
+                }
             }
         }
     }

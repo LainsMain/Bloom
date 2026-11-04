@@ -145,7 +145,16 @@ private fun toolLabel(n: String) = when (n) {
     "update_entry" -> "✏️ edited entry"
     "delete_entry" -> "🗑 removed entry"
     "log_weight" -> "⚖️ logged weight"
-    "propose_plan_change", "propose_training_change" -> "💡 suggestion"
+    "propose_plan_change", "propose_training_change", "propose_goal_change" -> "💡 suggestion"
+    "create_recipe" -> "🥣 saved recipe"
+    "get_workout_details" -> "🏋 read workouts"
+    "log_workout" -> "✅ logged workout"
+    "log_run" -> "✅ logged run"
+    "log_measurements" -> "📏 measurements"
+    "get_progress_photos", "view_progress_photos" -> "🖼 photos"
+    "get_nutrition_averages" -> "📊 nutrition history"
+    "copy_meal" -> "📋 copied meal"
+    "schedule_reminder" -> "⏰ reminder"
     else -> n
 }
 
@@ -164,11 +173,12 @@ fun ActionCard(a: AiActionEntity, onUndo: () -> Unit, onAccept: () -> Unit, onDe
                     when (a.kind) {
                         AiActionKind.PLAN_PROPOSAL -> "Suggested new targets"
                         AiActionKind.TRAINING_PROPOSAL -> "Training suggestion"
+                        AiActionKind.GOAL_PROPOSAL -> "Suggested goal change"
                         else -> a.summary
                     },
                     style = MaterialTheme.typography.titleSmall,
                 )
-                if (a.kind == AiActionKind.PLAN_PROPOSAL || a.kind == AiActionKind.TRAINING_PROPOSAL) {
+                if (a.kind == AiActionKind.PLAN_PROPOSAL || a.kind == AiActionKind.TRAINING_PROPOSAL || a.kind == AiActionKind.GOAL_PROPOSAL) {
                     Text(a.summary, style = MaterialTheme.typography.bodyMedium)
                     planText(a.payload)?.let { Text(it, style = MaterialTheme.typography.titleMedium) }
                 }

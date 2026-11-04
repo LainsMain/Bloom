@@ -5,6 +5,7 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Icon
@@ -142,6 +143,7 @@ fun MainShell(messages: AppMessages, deepLinks: be.lain.bloom.service.DeepLinks)
             be.lain.bloom.service.DeepLinks.WEIGH_IN -> backStack.switchTo(Route.Progress)
             be.lain.bloom.service.DeepLinks.FOOD -> backStack.switchTo(Route.Food)
             be.lain.bloom.service.DeepLinks.TRAIN -> backStack.switchTo(Route.Train)
+            be.lain.bloom.service.DeepLinks.COACH -> backStack.switchTo(Route.Coach)
         }
     }
 
@@ -178,7 +180,11 @@ fun MainShell(messages: AppMessages, deepLinks: be.lain.bloom.service.DeepLinks)
     ) { padding ->
         NavDisplay(
             backStack = backStack,
-            modifier = Modifier.padding(bottom = padding.calculateBottomPadding()),
+            // Consuming the bar's space stops imePadding() below from adding it a second time
+            // (that was the gap between the chat box and the keyboard).
+            modifier = Modifier
+                .padding(bottom = padding.calculateBottomPadding())
+                .consumeWindowInsets(androidx.compose.foundation.layout.PaddingValues(bottom = padding.calculateBottomPadding())),
             onBack = back,
             entryDecorators = listOf(
                 rememberSaveableStateHolderNavEntryDecorator(),

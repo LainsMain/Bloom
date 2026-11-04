@@ -27,7 +27,6 @@ import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Remove
 import androidx.compose.material3.ButtonGroupDefaults
-import androidx.compose.material3.CircularWavyProgressIndicator
 import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -115,7 +114,7 @@ fun ShapeIcon(
     }
 }
 
-/** The day's calorie budget as a wavy ring with the remaining amount as the hero number. */
+/** The day's calorie budget as a solid ring with the remaining amount as the hero number. */
 @Composable
 fun CalorieRing(eaten: Int, target: Int, modifier: Modifier = Modifier, size: Dp = 232.dp) {
     val over = target in 1..<eaten
@@ -128,15 +127,16 @@ fun CalorieRing(eaten: Int, target: Int, modifier: Modifier = Modifier, size: Dp
     val strokeWidth = with(LocalDensity.current) { 16.dp.toPx() }
     val description = if (over) "${eaten - target} kilocalories over target" else "${target - eaten} kilocalories left of $target"
     Box(modifier.size(size).semantics { contentDescription = description }, contentAlignment = Alignment.Center) {
-        CircularWavyProgressIndicator(
-            progress = { animated },
-            modifier = Modifier.size(size),
-            color = color,
-            trackColor = MaterialTheme.colorScheme.surfaceContainerHighest,
-            stroke = Stroke(width = strokeWidth, cap = androidx.compose.ui.graphics.StrokeCap.Round),
-            trackStroke = Stroke(width = strokeWidth, cap = androidx.compose.ui.graphics.StrokeCap.Round),
-            wavelength = 36.dp,
-        )
+        val track = MaterialTheme.colorScheme.surfaceContainerHighest
+        Canvas(Modifier.size(size)) {
+            val inset = strokeWidth / 2
+            val arcSize = Size(this.size.width - strokeWidth, this.size.height - strokeWidth)
+            val stroke = Stroke(width = strokeWidth, cap = androidx.compose.ui.graphics.StrokeCap.Round)
+            drawArc(track, startAngle = 0f, sweepAngle = 360f, useCenter = false, topLeft = Offset(inset, inset), size = arcSize, style = stroke)
+            if (animated > 0f) {
+                drawArc(color, startAngle = -90f, sweepAngle = 360f * animated, useCenter = false, topLeft = Offset(inset, inset), size = arcSize, style = stroke)
+            }
+        }
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Text(
                 (if (over) eaten - target else target - eaten).fmt(),

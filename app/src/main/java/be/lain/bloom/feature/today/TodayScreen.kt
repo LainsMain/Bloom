@@ -105,7 +105,9 @@ fun TodayScreen(navigate: (Route) -> Unit, openTab: (Route) -> Unit, vm: TodayVi
             item { EnergyCard(state, onClick = { openTab(Route.Food) }) }
             item {
                 val program by vm.program.collectAsStateWithLifecycle()
-                TrainingCard(state, program, onStartStrength = { p -> navigate(Route.WorkoutPreview(p.phase.index, p.next.id)) },
+                val runPlan by vm.runPlan.collectAsStateWithLifecycle()
+                TrainingCard(state, program, runPlan, onStartStrength = { p -> navigate(Route.WorkoutPreview(p.phase.index, p.next.id)) },
+                    onStartRun = { r -> navigate(Route.RunActive(r.key, r.plan.name)) },
                     onOpenTrain = { openTab(Route.Train) })
             }
             item {
@@ -256,13 +258,19 @@ private fun EnergyCard(state: TodayState, onClick: () -> Unit) {
 private fun TrainingCard(
     state: TodayState,
     program: be.lain.bloom.data.training.ProgramStatus?,
+    runPlan: be.lain.bloom.data.training.ActivePlan?,
     onStartStrength: (be.lain.bloom.data.training.ProgramStatus) -> Unit,
+    onStartRun: (be.lain.bloom.data.training.ActivePlan) -> Unit,
     onOpenTrain: () -> Unit,
 ) {
     val (title, body, icon, shape) = when (state.training) {
         TrainingKind.STRENGTH -> Quad("Strength day", program?.let { "${it.next.name} · ${it.next.focus} · ≈ ${it.next.estimateMinutes()} min" }
             ?: "Full-body bodyweight session · about 30 min", Icons.Rounded.FitnessCenter, MaterialShapes.Sunny)
-        TrainingKind.RUN -> Quad("Run-walk day", "Easy intervals — conversation pace", Icons.AutoMirrored.Rounded.DirectionsRun, MaterialShapes.Clover4Leaf)
+        TrainingKind.RUN -> Quad(
+            "Run day",
+            runPlan?.let { "${it.plan.name} · ≈ ${it.plan.totalSeconds / 60} min" } ?: "Easy intervals — conversation pace",
+            Icons.AutoMirrored.Rounded.DirectionsRun, MaterialShapes.Clover4Leaf,
+        )
         TrainingKind.REST -> Quad("Rest day", "Recovery is when your body adapts. A walk is a lovely bonus.", Icons.Rounded.SelfImprovement, MaterialShapes.Puffy)
     }
     BloomCard(Modifier.fillMaxWidth(), color = MaterialTheme.colorScheme.secondaryContainer, onClick = onOpenTrain) {
@@ -281,8 +289,8 @@ private fun TrainingCard(
         }
         if (state.training == TrainingKind.RUN) {
             Spacer(Modifier.height(12.dp))
-            androidx.compose.material3.Button(onClick = onOpenTrain, modifier = Modifier.fillMaxWidth()) {
-                Icon(Icons.AutoMirrored.Rounded.DirectionsRun, null); Spacer(Modifier.width(8.dp)); Text("Go to my run")
+            androidx.compose.material3.Button(onClick = { runPlan?.let(onStartRun) ?: onOpenTrain() }, modifier = Modifier.fillMaxWidth()) {
+                Icon(Icons.AutoMirrored.Rounded.DirectionsRun, null); Spacer(Modifier.width(8.dp)); Text("Start my run")
             }
         }
         if (state.training == TrainingKind.STRENGTH && program != null) {
