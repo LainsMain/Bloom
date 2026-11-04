@@ -15,6 +15,7 @@ import javax.inject.Inject
 class BloomApp : Application(), Configuration.Provider {
     @Inject lateinit var workerFactory: HiltWorkerFactory
     @Inject lateinit var reminders: Reminders
+    @Inject lateinit var runRepair: be.lain.bloom.data.training.RunRepair
     @Inject @AppScope lateinit var scope: CoroutineScope
 
     override val workManagerConfiguration: Configuration
@@ -25,5 +26,6 @@ class BloomApp : Application(), Configuration.Provider {
         MapLibre.getInstance(this)
         // KEEP: never cancel a reminder the system just started this process to deliver.
         scope.launch { runCatching { reminders.rescheduleAll(androidx.work.ExistingWorkPolicy.KEEP) } }
+        scope.launch { runCatching { runRepair.runOnce() } }
     }
 }

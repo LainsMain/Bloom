@@ -63,6 +63,11 @@ class RunRepository @Inject constructor(
     suspend fun setProgramIndex(i: Int) = context.runStore.edit { it[programKey] = i.coerceIn(0, RunProgram.runs.lastIndex) }
 
     private val activeKey = androidx.datastore.preferences.core.longPreferencesKey("active_plan_id")
+    private val repairKey = intPreferencesKey("run_repair_version")
+
+    /** Last [RunRepair] pass applied. Kept in this store so restoring an old backup also brings back its runs' repair state. */
+    suspend fun repairVersion(): Int = context.runStore.data.first()[repairKey] ?: 0
+    suspend fun setRepairVersion(v: Int) = context.runStore.edit { it[repairKey] = v }
 
     /** null = the built-in run-walk program. */
     suspend fun setActivePlan(planId: Long?) = context.runStore.edit { if (planId == null) it.remove(activeKey) else it[activeKey] = planId }
@@ -135,6 +140,7 @@ class RunningContext @Inject constructor(private val repo: RunRepository) : Trai
                         put("plan_completed", r.planCompleted)
                         put("kcal", r.kcal)
                         r.rpe?.let { put("rpe", it) }
+                        if (r.distanceUnreliable) put("distance_unreliable", "recorded with a GPS bug; distance, pace and kcal are wrong, the time is right")
                     })
                 }
             })

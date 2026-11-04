@@ -207,7 +207,9 @@ fun RunningPane(navigate: (Route) -> Unit, vm: RunningViewModel = hiltViewModel(
             items(runs.take(30), key = { "run-${it.id}" }) { r ->
                 FoodRow(
                     r.title,
-                    "${r.date.relative(today)} · ${(r.distanceM / 1000).fmt(2)} km · ${Geo.formatClock(r.movingSec)} · ${Geo.formatPace(Geo.pace(r.movingSec.toDouble(), r.distanceM))} /km",
+                    if (r.distanceUnreliable) "${r.date.relative(today)} · ${Geo.formatClock(r.movingSec)} · ⚠ distance wrong (app bug)"
+                    else "${r.date.relative(today)} · ${(r.distanceM / 1000).fmt(2)} km · ${Geo.formatClock(r.movingSec)} · ${Geo.formatPace(Geo.pace(r.movingSec.toDouble(), r.distanceM))} /km" +
+                        if (r.recalculatedAt != null) " · recalculated" else "",
                     onClick = { navigate(Route.RunDetail(r.id)) },
                 )
             }

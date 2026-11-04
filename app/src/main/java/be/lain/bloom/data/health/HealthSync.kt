@@ -233,7 +233,7 @@ class HealthSync @Inject constructor(
     private fun offset(t: Instant): ZoneOffset = ZoneId.systemDefault().rules.getOffset(t)
 
     /** Writes a Bloom run (session + route + distance + calories). Returns the session record id. */
-    suspend fun writeRun(id: Long): String? {
+    suspend fun writeRun(id: Long, version: Long = 1): String? {
         if (refreshStatus() != HcStatus.CONNECTED) return null
         val c = client() ?: return null
         val granted = c.permissionController.getGrantedPermissions()
@@ -251,14 +251,14 @@ class HealthSync @Inject constructor(
             add(
                 ExerciseSessionRecord(
                     startTime = run.startedAt, startZoneOffset = offset(run.startedAt), endTime = run.endedAt, endZoneOffset = offset(run.endedAt),
-                    metadata = Metadata.activelyRecorded(device, "bloom-run-$id", 1), exerciseType = ExerciseSessionRecord.EXERCISE_TYPE_RUNNING,
+                    metadata = Metadata.activelyRecorded(device, "bloom-run-$id", version), exerciseType = ExerciseSessionRecord.EXERCISE_TYPE_RUNNING,
                     title = run.title, exerciseRoute = route,
                 ),
             )
             if (run.distanceM > 0) add(DistanceRecord(run.startedAt, offset(run.startedAt), run.endedAt, offset(run.endedAt),
-                Length.meters(run.distanceM), Metadata.activelyRecorded(device, "bloom-run-dist-$id", 1)))
+                Length.meters(run.distanceM), Metadata.activelyRecorded(device, "bloom-run-dist-$id", version)))
             if (run.kcal > 0) add(ActiveCaloriesBurnedRecord(run.startedAt, offset(run.startedAt), run.endedAt, offset(run.endedAt),
-                Energy.kilocalories(run.kcal.toDouble()), Metadata.activelyRecorded(device, "bloom-run-kcal-$id", 1)))
+                Energy.kilocalories(run.kcal.toDouble()), Metadata.activelyRecorded(device, "bloom-run-kcal-$id", version)))
         }
         return runCatching { c.insertRecords(records).recordIdsList.firstOrNull() }.onFailure { _lastError.value = it.message }.getOrNull()
     }

@@ -32,6 +32,12 @@ import javax.inject.Inject
 
 enum class TrainingKind { STRENGTH, RUN, REST }
 
+/** Sessions already finished today (latest of each kind). */
+data class DoneToday(
+    val run: be.lain.bloom.data.db.RunSessionEntity? = null,
+    val workout: be.lain.bloom.data.db.WorkoutSessionEntity? = null,
+)
+
 data class TodayState(
     val loaded: Boolean = false,
     val date: LocalDate = LocalDate.now(),
@@ -127,6 +133,9 @@ class TodayViewModel @Inject constructor(
     val cycleState = date.flatMapLatest { cycle.state(it) }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
     fun setPeriodToday(on: Boolean) = viewModelScope.launch { cycle.setPeriod(date.value, on) }
     val runPlan = runs.activePlan.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+    val doneToday = date.flatMapLatest { day ->
+        combine(runs.runs, training.workouts) { r, w -> DoneToday(r.firstOrNull { it.date == day }, w.firstOrNull { it.date == day }) }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), DoneToday())
     val reviewDue = date.flatMapLatest { reviews.dueOn(it) }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
 
     fun defaultMeal(): Meal = food.defaultMeal()

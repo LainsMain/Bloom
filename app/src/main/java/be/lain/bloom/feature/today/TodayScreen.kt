@@ -21,6 +21,7 @@ import androidx.compose.material.icons.automirrored.rounded.DirectionsRun
 import androidx.compose.material.icons.automirrored.rounded.Undo
 import androidx.compose.material.icons.automirrored.rounded.DirectionsWalk
 import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.EventAvailable
 import androidx.compose.material.icons.rounded.FitnessCenter
@@ -106,8 +107,10 @@ fun TodayScreen(navigate: (Route) -> Unit, openTab: (Route) -> Unit, vm: TodayVi
             item {
                 val program by vm.program.collectAsStateWithLifecycle()
                 val runPlan by vm.runPlan.collectAsStateWithLifecycle()
-                TrainingCard(state, program, runPlan, onStartStrength = { p -> navigate(Route.WorkoutPreview(p.phase.index, p.next.id, p.program.id)) },
+                val done by vm.doneToday.collectAsStateWithLifecycle()
+                TrainingCard(state, program, runPlan, done, onStartStrength = { p -> navigate(Route.WorkoutPreview(p.phase.index, p.next.id, p.program.id)) },
                     onStartRun = { r -> navigate(Route.RunActive(r.key, r.plan.name)) },
+                    onOpenRun = { id -> navigate(Route.RunDetail(id)) },
                     onOpenTrain = { openTab(Route.Train) })
             }
             item {
@@ -309,11 +312,30 @@ private fun TrainingCard(
     state: TodayState,
     program: be.lain.bloom.data.training.ProgramStatus?,
     runPlan: be.lain.bloom.data.training.ActivePlan?,
+    done: DoneToday,
     onStartStrength: (be.lain.bloom.data.training.ProgramStatus) -> Unit,
     onStartRun: (be.lain.bloom.data.training.ActivePlan) -> Unit,
+    onOpenRun: (Long) -> Unit,
     onOpenTrain: () -> Unit,
 ) {
-    val (title, body, icon, shape) = when (state.training) {
+    fun runLine(r: be.lain.bloom.data.db.RunSessionEntity) =
+        if (r.distanceUnreliable) "${r.title} · ${be.lain.bloom.domain.running.Geo.formatClock(r.movingSec)}"
+        else "${r.title} · ${"%.2f".format(r.distanceM / 1000)} km in ${be.lain.bloom.domain.running.Geo.formatClock(r.movingSec)}"
+    fun workoutLine(w: be.lain.bloom.data.db.WorkoutSessionEntity) = "${w.name} · ${w.activeSeconds / 60} min · ${w.setsDone}/${w.setsPlanned} sets"
+    val runDone = done.run.takeIf { state.training == TrainingKind.RUN }
+    val workoutDone = done.workout.takeIf { state.training == TrainingKind.STRENGTH }
+    val isDone = runDone != null || workoutDone != null
+    // A session that wasn't today's plan, e.g. a run on a rest day.
+    val extra = when (state.training) {
+        TrainingKind.RUN -> done.workout?.let { "Also done today: ${workoutLine(it)}" }
+        TrainingKind.STRENGTH -> done.run?.let { "Also done today: ${runLine(it)}" }
+        TrainingKind.REST -> listOfNotNull(done.run?.let(::runLine), done.workout?.let(::workoutLine))
+            .takeIf { it.isNotEmpty() }?.joinToString("\n", prefix = "Done today: ")
+    }
+    val (title, body, icon, shape) = when {
+        runDone != null -> Quad("Run done ✓", runLine(runDone) + ". Lovely work!", Icons.Rounded.CheckCircle, MaterialShapes.Clover4Leaf)
+        workoutDone != null -> Quad("Workout done ✓", workoutLine(workoutDone) + ". Lovely work!", Icons.Rounded.CheckCircle, MaterialShapes.Sunny)
+        else -> when (state.training) {
         TrainingKind.STRENGTH -> Quad("Strength day", program?.let { "${it.next.name} · ${it.next.focus} · ≈ ${it.next.estimateMinutes()} min" }
             ?: "Full-body bodyweight session · about 30 min", Icons.Rounded.FitnessCenter, MaterialShapes.Sunny)
         TrainingKind.RUN -> Quad(
@@ -322,6 +344,7 @@ private fun TrainingCard(
             Icons.AutoMirrored.Rounded.DirectionsRun, MaterialShapes.Clover4Leaf,
         )
         TrainingKind.REST -> Quad("Rest day", "Recovery is when your body adapts. A walk is a lovely bonus.", Icons.Rounded.SelfImprovement, MaterialShapes.Puffy)
+        }
     }
     BloomCard(Modifier.fillMaxWidth(), color = MaterialTheme.colorScheme.secondaryContainer, onClick = onOpenTrain) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -337,19 +360,26 @@ private fun TrainingCard(
                 Text(body, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSecondaryContainer)
             }
         }
-        if (state.training == TrainingKind.RUN) {
+        extra?.let {
+            Spacer(Modifier.height(8.dp))
+            Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSecondaryContainer)
+        }
+        if (runDone != null) {
+            Spacer(Modifier.height(12.dp))
+            androidx.compose.material3.OutlinedButton(onClick = { onOpenRun(runDone.id) }, modifier = Modifier.fillMaxWidth()) { Text("View run") }
+        } else if (state.training == TrainingKind.RUN) {
             Spacer(Modifier.height(12.dp))
             androidx.compose.material3.Button(onClick = { runPlan?.let(onStartRun) ?: onOpenTrain() }, modifier = Modifier.fillMaxWidth()) {
                 Icon(Icons.AutoMirrored.Rounded.DirectionsRun, null); Spacer(Modifier.width(8.dp)); Text("Start my run")
             }
         }
-        if (state.training == TrainingKind.STRENGTH && program != null) {
+        if (state.training == TrainingKind.STRENGTH && program != null && workoutDone == null) {
             Spacer(Modifier.height(12.dp))
             androidx.compose.material3.Button(onClick = { onStartStrength(program) }, modifier = Modifier.fillMaxWidth()) {
                 Icon(Icons.Rounded.FitnessCenter, null); Spacer(Modifier.width(8.dp)); Text("Start workout")
             }
         }
-        state.nextTraining?.takeIf { state.training == TrainingKind.REST }?.let { (day, kind) ->
+        state.nextTraining?.takeIf { state.training == TrainingKind.REST || isDone }?.let { (day, kind) ->
             Spacer(Modifier.height(12.dp))
             Text(
                 "Next: ${if (kind == TrainingKind.STRENGTH) "strength" else "run-walk"} on ${day.getDisplayName(TextStyle.FULL, Locale.ENGLISH)}",
