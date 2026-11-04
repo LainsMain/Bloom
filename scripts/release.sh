@@ -33,8 +33,10 @@ mkdir -p build/release
 OUT="build/release/bloom-$VERSION.apk"
 cp "$APK" "$OUT"
 
-git add gradle.properties
-git commit -m "Release $VERSION"
+if ! git diff --quiet gradle.properties; then
+  git add gradle.properties
+  git commit -m "Release $VERSION"
+fi
 git tag -a "v$VERSION" -m "Bloom $VERSION"
 git push origin HEAD --follow-tags
 
