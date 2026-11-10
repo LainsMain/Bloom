@@ -14,3 +14,7 @@
 -keep class com.google.android.gms.internal.mlkit_vision_** { *; }
 -keep class * implements com.google.firebase.components.ComponentRegistrar { <init>(); }
 -dontwarn com.google.mlkit.**
+
+# Filament (3-D exercise figure): the native renderer calls back into these classes over JNI.
+-keep class com.google.android.filament.** { *; }
+-dontwarn com.google.android.filament.**

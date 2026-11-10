@@ -112,7 +112,7 @@ fun ProgramsScreen(onBack: () -> Unit, vm: ProgramsViewModel = hiltViewModel()) 
         ) {
             item {
                 Text(
-                    "All at home, all with demo videos. Each program keeps its own progress, so you can switch and come back.",
+                    "All at home, every exercise demonstrated in 3-D at its tempo. Each program keeps its own progress, so you can switch and come back.",
                     style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }

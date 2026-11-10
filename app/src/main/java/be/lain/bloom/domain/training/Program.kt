@@ -26,7 +26,14 @@ data class Session(val id: String, val name: String, val focus: String, val bloc
             b.items.forEach { p ->
                 val ex = Exercises[p.exerciseId]
                 val sides = if (ex.perSide) 2 else 1
-                val work = if (p.isTimed) p.seconds * sides else ((p.repsMin + p.repsMax) / 2) * 3 * sides
+                // Rep work runs at the exercise's guided tempo up to the top of the range.
+                val tempo = be.lain.bloom.domain.motion.Tempos[p.exerciseId]
+                val work = when {
+                    p.isTimed -> p.seconds * sides
+                    tempo.style == be.lain.bloom.domain.motion.MotionStyle.REPS -> (p.repsMax * tempo.cycleSeconds * sides).toInt() + if (sides == 2) 5 else 0
+                    tempo.style == be.lain.bloom.domain.motion.MotionStyle.ALTERNATING -> (p.repsMax * tempo.cycleSeconds).toInt()
+                    else -> ((p.repsMin + p.repsMax) / 2) * 3 * sides
+                }
                 sec += p.sets * (work + 8) + (p.sets - 1).coerceAtLeast(0) * p.restSec
                 if (b.kind == BlockKind.MAIN || b.kind == BlockKind.CORE) sec += p.restSec
             }

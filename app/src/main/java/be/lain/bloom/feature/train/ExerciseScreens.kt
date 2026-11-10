@@ -40,6 +40,11 @@ import androidx.lifecycle.viewModelScope
 import be.lain.bloom.core.AppMessages
 import be.lain.bloom.core.designsystem.BloomCard
 import be.lain.bloom.core.designsystem.ExerciseVideo
+import be.lain.bloom.core.figure.ExerciseFigure
+import be.lain.bloom.core.figure.demoFrames
+import be.lain.bloom.domain.motion.Tempos
+import be.lain.bloom.domain.motion.label
+import androidx.compose.runtime.saveable.rememberSaveable
 import be.lain.bloom.core.designsystem.parseYouTubeId
 import be.lain.bloom.data.training.TrainingRepository
 import be.lain.bloom.domain.training.ExerciseKind
@@ -123,18 +128,27 @@ fun ExerciseDetailScreen(key: Route.ExerciseDetail, onBack: () -> Unit, navigate
         topBar = { TopAppBar(title = { Text(ex.name) }, navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Back") } }) },
     ) { padding ->
         Column(Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            ExerciseVideo(video?.id, muted = false)
-            Row {
+            val demo = remember(ex.id) { demoFrames(ex.id) }
+            ExerciseFigure(demo, Modifier.fillMaxWidth().height(380.dp), label = "${ex.name} demonstration")
+            Text(
+                listOfNotNull(Tempos[ex.id].label()?.let { "Tempo: $it" }, "Drag to look around").joinToString(" · "),
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            var showVideo by rememberSaveable { mutableStateOf(false) }
+            if (!showVideo) {
+                AssistChip(onClick = { showVideo = true }, label = { Text("Watch a video") })
+            } else {
+                ExerciseVideo(video?.id, muted = false)
                 Text(
-                    video?.let { (if (it.custom) "Your video" else "Demo") + (it.title.takeIf { t -> t.isNotBlank() }?.let { t -> ": $t" } ?: "") + (it.channel.takeIf { c -> c.isNotBlank() }?.let { c -> " — $c" } ?: "") } ?: "",
-                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f),
+                    video?.let { (if (it.custom) "Your video" else "Video") + (it.title.takeIf { t -> t.isNotBlank() }?.let { t -> ": $t" } ?: "") + (it.channel.takeIf { c -> c.isNotBlank() }?.let { c -> " — $c" } ?: "") } ?: "",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-            }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                AssistChip(onClick = { changing = true }, label = { Text("Change video") })
-                if (video?.custom == true) AssistChip(onClick = { vm.resetVideo(ex.id) }, label = { Text("Use default") })
-                AssistChip(onClick = { uri.openUri("https://www.youtube.com/results?search_query=" + java.net.URLEncoder.encode("${ex.name} exercise how to", "UTF-8")) },
-                    label = { Text("Find on YouTube") })
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    AssistChip(onClick = { changing = true }, label = { Text("Change video") })
+                    if (video?.custom == true) AssistChip(onClick = { vm.resetVideo(ex.id) }, label = { Text("Use default") })
+                    AssistChip(onClick = { uri.openUri("https://www.youtube.com/results?search_query=" + java.net.URLEncoder.encode("${ex.name} exercise how to", "UTF-8")) },
+                        label = { Text("Find on YouTube") })
+                }
             }
             BloomCard(Modifier.fillMaxWidth()) {
                 Text("Works", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)

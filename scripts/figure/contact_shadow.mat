@@ -1,0 +1,20 @@
+// Soft contact shadow under the figure: an alpha texture painted on the CPU each frame
+// (compiled with Filament's matc, see build_materials.sh).
+material {
+    name : contact_shadow,
+    shadingModel : unlit,
+    blending : transparent,
+    requires : [ uv0 ],
+    parameters : [
+        { type : sampler2d, name : shadow },
+        { type : float, name : strength }
+    ]
+}
+
+fragment {
+    void material(inout MaterialInputs material) {
+        prepareMaterial(material);
+        float a = texture(materialParams_shadow, getUV0()).r * materialParams.strength;
+        material.baseColor = vec4(0.0, 0.0, 0.0, a);
+    }
+}

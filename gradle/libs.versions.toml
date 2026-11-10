@@ -22,6 +22,7 @@ healthConnect = "1.1.0"
 playLocation = "21.3.0"
 maplibre = "13.7.1"
 youtubePlayer = "13.1.0"
+filament = "1.77.3"
 biometric = "1.1.0"
 exif = "1.4.1"
 junit = "4.13.2"
@@ -67,6 +68,8 @@ mlkit-barcode = { module = "com.google.mlkit:barcode-scanning", version.ref = "m
 health-connect = { module = "androidx.health.connect:connect-client", version.ref = "healthConnect" }
 play-services-location = { module = "com.google.android.gms:play-services-location", version.ref = "playLocation" }
 maplibre = { module = "org.maplibre.gl:android-sdk", version.ref = "maplibre" }
+filament-android = { module = "com.google.android.filament:filament-android", version.ref = "filament" }
+filament-gltfio = { module = "com.google.android.filament:gltfio-android", version.ref = "filament" }
 youtube-player = { module = "com.pierfrancescosoffritti.androidyoutubeplayer:core", version.ref = "youtubePlayer" }
 androidx-exifinterface = { module = "androidx.exifinterface:exifinterface", version.ref = "exif" }
 androidx-biometric = { module = "androidx.biometric:biometric", version.ref = "biometric" }

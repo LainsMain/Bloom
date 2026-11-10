@@ -63,7 +63,11 @@ android {
         buildConfig = true
     }
     packaging { resources.excludes += "/META-INF/{AL2.0,LGPL2.1}" }
-    testOptions { unitTests.isReturnDefaultValues = true }
+    testOptions {
+        unitTests.isReturnDefaultValues = true
+        // Exercise animation contact sheets: -Pbloom.preview=pushup,glute-bridge (or all).
+        unitTests.all { it.systemProperty("bloom.preview", providers.gradleProperty("bloom.preview").getOrElse("")) }
+    }
     sourceSets { getByName("androidTest").assets.directories.add("$projectDir/schemas") }
     lint {
         // Versions are pinned deliberately to a combination known to build here.
@@ -102,6 +106,10 @@ dependencies {
     implementation(libs.androidx.lifecycle.viewmodel.navigation3)
     implementation(libs.androidx.lifecycle.service)
     implementation(libs.youtube.player)
+    // Filament's Java libraries declare kotlin-stdlib 2.4, newer than this toolchain (Hilt can't read
+    // its metadata); they don't use it, so keep the project's own stdlib.
+    implementation(libs.filament.android) { exclude(group = "org.jetbrains.kotlin") }
+    implementation(libs.filament.gltfio) { exclude(group = "org.jetbrains.kotlin") }
     implementation(libs.play.services.location)
     implementation(libs.maplibre)
     implementation(libs.health.connect)

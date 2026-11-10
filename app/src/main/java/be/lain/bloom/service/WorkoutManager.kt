@@ -18,6 +18,7 @@ import be.lain.bloom.data.BodyRepository
 import be.lain.bloom.data.SettingsRepository
 import be.lain.bloom.data.db.WorkoutSessionEntity
 import be.lain.bloom.data.training.TrainingRepository
+import be.lain.bloom.domain.motion.GuideCue
 import be.lain.bloom.domain.training.Cue
 import be.lain.bloom.domain.training.Effort
 import be.lain.bloom.domain.training.Exercises
@@ -28,6 +29,7 @@ import be.lain.bloom.domain.training.StepType
 import be.lain.bloom.domain.training.WorkoutEngine
 import be.lain.bloom.domain.training.WorkoutPlan
 import be.lain.bloom.domain.training.WorkoutSpeech
+import be.lain.bloom.domain.training.guided
 import dagger.hilt.android.AndroidEntryPoint
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Job
@@ -65,7 +67,7 @@ class WorkoutManager @Inject constructor(
     @be.lain.bloom.di.AppScope private val scope: kotlinx.coroutines.CoroutineScope,
     private val clock: Clock,
 ) {
-    private val engine = WorkoutEngine { SystemClock.elapsedRealtime() }
+    private val engine = WorkoutEngine(now = { SystemClock.elapsedRealtime() })
     private val _active = MutableStateFlow<ActiveWorkout?>(null)
     val active: StateFlow<ActiveWorkout?> = _active.asStateFlow()
     @Volatile var pauseBeforeExercise = false
@@ -98,6 +100,10 @@ class WorkoutManager @Inject constructor(
         emptyList()
     }
     fun finishEarly() = act { engine.finishEarly() }
+    fun setReps(stepIndex: Int, reps: Int) = act { engine.setReps(stepIndex, reps); emptyList() }
+
+    /** Milliseconds until the engine next has something to say or do. */
+    fun msUntilNextEvent(): Long = engine.msUntilNextEvent()
 
     private fun act(f: () -> List<Cue>) {
         val a = _active.value ?: return
@@ -112,10 +118,20 @@ class WorkoutManager @Inject constructor(
         cues.forEach { c ->
             when (c) {
                 is Cue.Enter -> {
-                    speaker.speak(WorkoutSpeech.enter(c.step))
-                    speaker.buzz(if (c.step.type == StepType.WORK) Buzz.START else Buzz.TICK)
+                    val text = WorkoutSpeech.enter(c)
+                    if (text.isNotBlank()) speaker.speak(text)
+                    speaker.buzz(if (c.step.type == StepType.WORK && c.leadIn == be.lain.bloom.domain.training.LeadIn.NONE) Buzz.START else Buzz.TICK)
                 }
-                is Cue.Count -> { speaker.speak("${c.n}"); speaker.buzz(Buzz.TICK) }
+                is Cue.Count -> { speaker.word("${c.n}"); speaker.buzz(Buzz.TICK) }
+                Cue.Go -> { speaker.word("go"); speaker.buzz(Buzz.START) }
+                is Cue.Guide -> when (val g = c.cue) {
+                    is GuideCue.Word -> speaker.word(g.text)
+                    is GuideCue.Rep -> { speaker.word("${g.n}"); speaker.buzz(Buzz.TICK) }
+                    GuideCue.SwitchSides -> { speaker.word("switch sides"); speaker.buzz(Buzz.START) }
+                    is GuideCue.Count -> { speaker.word("${g.n}"); speaker.buzz(Buzz.TICK) }
+                }
+                is Cue.Upcoming -> speaker.speak(WorkoutSpeech.upcoming(c.step))
+                Cue.Halfway -> speaker.word("halfway")
                 Cue.Finished -> { speaker.speak("Workout complete. Amazing work!"); speaker.buzz(Buzz.DONE) }
             }
         }
@@ -165,9 +181,13 @@ class WorkoutManager @Inject constructor(
         }
     }
 
+    private fun guidedText(p: PlayerState): String? = p.guided(SystemClock.elapsedRealtime())?.let { g ->
+        if (!g.started) "Get set…" else "Rep ${minOf(g.reps + 1, g.target)} of ${g.target}" + if (g.sides == 2) (if (g.side == 0) " · left" else " · right") else ""
+    }
+
     @Suppress("MemberVisibilityCanBePrivate")
     fun remainingText(p: PlayerState): String =
-        if (p.current.timed) "${(p.remainingMs / 1000.0).roundToInt()} s left" else "Tap Done when finished"
+        if (p.current.timed) "${(p.remainingMs / 1000.0).roundToInt()} s left" else guidedText(p) ?: "Tap Done when finished"
 }
 
 @AndroidEntryPoint
@@ -206,7 +226,8 @@ class WorkoutService : LifecycleService() {
                         getSystemService(NotificationManager::class.java).notify(ID, notification())
                         lastNotified = now
                     }
-                    delay(200)
+                    // Wake exactly when the next call is due (tempo words need to land on the beat).
+                    delay(manager.msUntilNextEvent())
                 }
             }
         }
