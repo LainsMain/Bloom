@@ -2,6 +2,7 @@ package be.lain.bloom.domain.training
 
 import be.lain.bloom.domain.motion.GuideCue
 import be.lain.bloom.domain.motion.GuideFrame
+import be.lain.bloom.domain.motion.LoopGuide
 import be.lain.bloom.domain.motion.MotionStyle
 import be.lain.bloom.domain.motion.RepGuide
 import be.lain.bloom.domain.motion.Tempos
@@ -134,7 +135,21 @@ object Guides {
         val key = Key(step.exerciseId, step.repsMax.coerceAtLeast(1), step.side == "each side", step.note)
         return cache.getOrPut(key) { RepGuide(tempo.withNote(step.note), key.reps, key.perSide) }
     }
+
+    private val loops = java.util.concurrent.ConcurrentHashMap<Pair<String, Int>, LoopGuide>()
+
+    /** Rhythm calls for timed warm-up loops (march, step jacks, circles…). */
+    fun loopFor(step: Step): LoopGuide? {
+        if (step.type != StepType.WORK || !step.timed) return null
+        val tempo = Tempos[step.exerciseId]
+        if (tempo.style != MotionStyle.LOOP) return null
+        return loops.getOrPut(step.exerciseId to step.seconds) { LoopGuide(tempo, step.seconds * 1000L) }
+    }
 }
+
+/** Ms into a timed step's work (negative during its lead-in), following pauses and added time. */
+private fun PlayerState.timedElapsed(t: Long): Long = t - (deadlineMs - current.seconds * 1000L)
+
 
 /** Live numbers for a guided set, for the screen. */
 data class GuidedProgress(val reps: Int, val target: Int, val side: Int, val sides: Int, val switching: Boolean, val word: String?, val started: Boolean)
@@ -153,11 +168,16 @@ fun PlayerState.figure(nowMs: Long): Pair<String, GuideFrame> {
     val t = clock(nowMs)
     if (step.type != StepType.WORK) return step.exerciseId to GuideFrame(nowMs / 1000.0) // demo of what's next
     val guide = Guides.forStep(step)
-    val mirrored = step.side == "Right"
+    val mirrored = step.side == "Right" || (guide != null && guide.sideIndex((t - guideStartMs).coerceAtLeast(0)) == 1)
     return when {
+        // Paused: keep demonstrating at the exercise's tempo, so the pause is a chance to watch.
+        paused -> step.exerciseId to GuideFrame(nowMs / 1000.0, mirrored)
         inLeadIn || (guide != null && t < guideStartMs) -> step.exerciseId to GuideFrame(0.0, mirrored = mirrored, breathe = t / 1000.0)
         guide != null -> step.exerciseId to guide.frame(t - guideStartMs)
-        step.timed -> step.exerciseId to GuideFrame(((t - (deadlineMs - step.seconds * 1000L)).coerceAtLeast(0)) / 1000.0, mirrored)
+        step.timed -> {
+            val elapsed = timedElapsed(t).coerceAtLeast(0)
+            step.exerciseId to (Guides.loopFor(step)?.frame(elapsed, mirrored) ?: GuideFrame(elapsed / 1000.0, mirrored))
+        }
         else -> step.exerciseId to GuideFrame(nowMs / 1000.0, mirrored)
     }
 }
@@ -257,6 +277,15 @@ class WorkoutEngine(private val speechMs: (String) -> Long = WorkoutSpeech::esti
                 break
             }
             if (!step.timed) break // rep work without a tempo waits for Done
+            Guides.loopFor(step)?.let { loop ->
+                val pos = s.timedElapsed(t)
+                var k = s.guideCue
+                while (k < loop.cues.size && loop.cues[k].atMs <= pos) {
+                    if (pos - loop.cues[k].atMs < STALE_MS) cues += Cue.Guide(loop.cues[k].cue)
+                    k++
+                }
+                s = s.copy(guideCue = k)
+            }
             if (t >= s.deadlineMs) {
                 if (step.type == StepType.WORK) s = record(s, s.index, reps = null, seconds = step.seconds, effort = null, skipped = false)
                 s = advanceNatural(s, s.deadlineMs, t, cues)
@@ -264,7 +293,8 @@ class WorkoutEngine(private val speechMs: (String) -> Long = WorkoutSpeech::esti
             }
             val remaining = s.deadlineMs - t
             s = s.copy(remainingMs = remaining.coerceAtMost(step.seconds * 1000L))
-            if (step.type == StepType.WORK && step.seconds >= 20 && remaining <= step.seconds * 500L && HALF !in s.countdownSpoken) {
+            if (step.type == StepType.WORK && step.seconds >= 20 && remaining <= step.seconds * 500L && HALF !in s.countdownSpoken &&
+                Guides.loopFor(step)?.speaks != true) {
                 cues += Cue.Halfway; s = s.copy(countdownSpoken = s.countdownSpoken + HALF)
             }
             val next = s.next
@@ -434,7 +464,10 @@ class WorkoutEngine(private val speechMs: (String) -> Long = WorkoutSpeech::esti
             if (guide != null) {
                 guide.cues.getOrNull(s.guideCue)?.let { at(s.guideStartMs + it.atMs) }
                 at(s.guideStartMs + guide.totalMs)
-            } else if (s.current.timed) { at(s.deadlineMs); secondBoundary(s.deadlineMs) }
+            } else if (s.current.timed) {
+                at(s.deadlineMs); secondBoundary(s.deadlineMs)
+                Guides.loopFor(s.current)?.let { loop -> loop.cues.getOrNull(s.guideCue)?.let { at(s.deadlineMs - s.current.seconds * 1000L + it.atMs) } }
+            }
         }
         return next.coerceIn(5, 200)
     }

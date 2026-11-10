@@ -178,7 +178,7 @@ class CueSpeaker @Inject constructor(@ApplicationContext private val context: Co
         /** Every word a guided set can say (see Tempos), plus counts. */
         val CLIP_WORDS: List<String> = listOf(
             "down", "up", "hold", "squeeze", "open", "close", "out", "in", "pull", "lower", "reach", "tap",
-            "left", "right", "y", "t", "w", "go", "switch sides", "halfway",
+            "left", "right", "y", "t", "w", "go", "switch sides", "halfway", "forward", "cat", "cow", "switch direction",
         ) + (1..40).map { "$it" }
     }
 }

@@ -108,8 +108,8 @@ class WorkoutPlayerViewModel @Inject constructor(
         manager.pauseBeforeExercise = on
     }
 
-    fun save(rpe: Int?, notes: String, onDone: () -> Unit) = viewModelScope.launch {
-        manager.save(rpe, notes)
+    fun save(rpe: Int?, notes: String, date: java.time.LocalDate, onDone: () -> Unit) = viewModelScope.launch {
+        manager.save(rpe, notes, date)
         messages.show("Workout saved — lovely work 💪")
         onDone()
     }
@@ -132,7 +132,7 @@ fun WorkoutPlayerScreen(onBack: () -> Unit, vm: WorkoutPlayerViewModel = hiltVie
     var confirmEnd by remember { mutableStateOf(false) }
 
     if (p.finished) {
-        Summary(vm, p, a.session.name, onDone = onBack)
+        Summary(vm, p, a.session.name, a.startedAt, onDone = onBack)
         return
     }
     val step = p.current
@@ -235,7 +235,7 @@ fun WorkoutPlayerScreen(onBack: () -> Unit, vm: WorkoutPlayerViewModel = hiltVie
                 Spacer(Modifier.height(10.dp))
                 Surface(shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.tertiaryContainer, modifier = Modifier.fillMaxWidth()) {
                     Text(
-                        if (guided != null && guided.started) "Paused — when you resume there's a 3-2-1 and the rep you were on starts again."
+                        if (guided != null && guided.started) "Paused — the demo keeps going so you can watch it (drag to look around). When you resume there's a 3-2-1 and the rep you were on starts again."
                         else "Paused — watch the demo as long as you like (drag it to look around), then tap Resume.",
                         style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(14.dp),
                     )
@@ -363,8 +363,10 @@ private fun TimerRing(p: PlayerState, size: androidx.compose.ui.unit.Dp = 220.dp
 }
 
 @Composable
-private fun Summary(vm: WorkoutPlayerViewModel, p: PlayerState, name: String, onDone: () -> Unit) {
+private fun Summary(vm: WorkoutPlayerViewModel, p: PlayerState, name: String, startedAt: java.time.Instant, onDone: () -> Unit) {
     var rpe by remember { mutableFloatStateOf(6f) }
+    // A workout started after midnight (before 4 am) counts for yesterday unless changed.
+    var date by remember { mutableStateOf(be.lain.bloom.core.designsystem.defaultLogDate(startedAt)) }
     var notes by remember { mutableStateOf("") }
     var saving by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
@@ -393,9 +395,11 @@ private fun Summary(vm: WorkoutPlayerViewModel, p: PlayerState, name: String, on
         )
         Spacer(Modifier.height(16.dp))
         OutlinedTextField(notes, { notes = it }, label = { Text("Notes (optional)") }, modifier = Modifier.fillMaxWidth(), minLines = 2)
+        Spacer(Modifier.height(16.dp))
+        be.lain.bloom.core.designsystem.LogDateRow(date, { date = it }, Modifier.fillMaxWidth())
         Spacer(Modifier.height(24.dp))
         Button(
-            onClick = { saving = true; vm.save(rpe.roundToInt(), notes, onDone) }, enabled = !saving, shapes = ButtonDefaults.shapes(),
+            onClick = { saving = true; vm.save(rpe.roundToInt(), notes, date, onDone) }, enabled = !saving, shapes = ButtonDefaults.shapes(),
             modifier = Modifier.fillMaxWidth().height(ButtonDefaults.MediumContainerHeight),
         ) { Text("Save workout", style = ButtonDefaults.textStyleFor(ButtonDefaults.MediumContainerHeight)) }
         TextButton(onClick = { scope.launch { vm.discard(onDone) } }) { Text("Discard") }

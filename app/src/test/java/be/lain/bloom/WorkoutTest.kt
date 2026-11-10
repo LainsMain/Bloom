@@ -7,6 +7,7 @@ import be.lain.bloom.domain.training.BlockKind
 import be.lain.bloom.domain.training.Guides
 import be.lain.bloom.domain.training.LeadIn
 import be.lain.bloom.domain.training.WorkoutSpeech
+import be.lain.bloom.domain.training.figure
 import be.lain.bloom.domain.training.Cue
 import be.lain.bloom.domain.training.Effort
 import be.lain.bloom.domain.training.Exercises
@@ -57,7 +58,7 @@ class WorkoutTest {
                     // Every session also produces a playable plan.
                     assertTrue(WorkoutPlan.steps(s, ph.index, program = prog).isNotEmpty())
                     val m = s.estimateMinutes()
-                    val range = if (prog.id == "quick-15") 10..20 else 15..42
+                    val range = if (prog.id == "quick-15" || prog.id == "starter-15") 10..20 else 15..42
                     assertTrue("${prog.id} ${s.name} is $m min", m in range)
                 }
             }
@@ -233,6 +234,69 @@ class WorkoutTest {
         val sumo = Tempos["sumo-squat"].withNote("Pause 1 s at the bottom")
         assertEquals(1, sumo.beats.count { it.word == "hold" })
         assertTrue(Tempos["step-up"].withNote("Use a low step") === Tempos["step-up"])
+    }
+
+    @Test fun starterProgramIsAboutFifteenMinutes() {
+        val starter = be.lain.bloom.domain.training.Programs.byId("starter-15")
+        assertEquals("starter-15", starter.id)
+        assertEquals(3, starter.sessionsPerWeek)
+        starter.phases.flatMap { it.sessions }.forEach { s ->
+            val m = s.estimateMinutes()
+            assertTrue("${s.name} is $m min", m in 12..17)
+        }
+    }
+
+    @Test fun warmupLoopsCallTheRhythm() {
+        val march = be.lain.bloom.domain.motion.LoopGuide(Tempos["march-in-place"], 45_000)
+        val words = march.cues.map { it.cue }.filterIsInstance<GuideCue.Word>().map { it.text }
+        // The first "left" falls in the quiet moment after "Go!", so the chant starts on the right knee.
+        assertEquals(listOf("right", "left", "right", "left"), words.take(4))
+        // Clear of "Go!" at the start and the 3-2-1 at the end.
+        assertTrue(march.cues.all { it.atMs >= 700 && it.atMs <= 45_000 - 3_300 })
+        val circles = be.lain.bloom.domain.motion.LoopGuide(Tempos["hip-circles"], 30_000)
+        assertTrue(circles.cues.any { it.cue == GuideCue.SwitchDirection && it.atMs == 15_000L })
+        // The figure turns round at the switch.
+        assertTrue(circles.frame(16_000, false).t < circles.frame(15_000, false).t)
+    }
+
+    @Test fun timedWarmupSaysTheRhythmInStep() {
+        var t = 0L
+        val e = WorkoutEngine { t }
+        val steps = WorkoutPlan.steps(Program.phase(0).sessions[0], 0)
+        e.start(steps)
+        t = 10_000; e.tick() // march starts after the 10 s get-ready
+        assertEquals("march-in-place", e.state!!.current.exerciseId)
+        val heard = mutableListOf<Cue>()
+        while (t < 30_000) { t += 50; heard += e.tick() }
+        val calls = heard.filterIsInstance<Cue.Guide>().map { it.cue }.filterIsInstance<GuideCue.Word>().map { it.text }
+        assertTrue(calls.size > 15)
+        assertTrue(calls.zipWithNext().all { (a, b) -> a != b }) // left, right, left…
+        assertFalse(heard.any { it is Cue.Halfway })
+    }
+
+    @Test fun pausedFigureKeepsDemonstrating() {
+        var t = 0L
+        val e = WorkoutEngine({ 2_000L }) { t }
+        val steps = WorkoutPlan.steps(Program.phase(0).sessions[0], 0)
+        e.start(steps)
+        toFirstRepWork(e, steps)
+        t = e.state!!.guideStartMs + 2_500; e.tick()
+        e.setPaused(true)
+        val a = e.state!!.figure(t + 400).second
+        val b = e.state!!.figure(t + 1_400).second
+        assertTrue("the demo moves while paused", a.t != b.t)
+    }
+
+    @Test fun lateNightSessionsCountForYesterday() {
+        val zone = java.time.ZoneId.of("Europe/Brussels")
+        val today = java.time.LocalDate.of(2026, 11, 11)
+        fun at(h: Int, m: Int) = today.atTime(h, m).atZone(zone).toInstant()
+        assertEquals(today.minusDays(1), be.lain.bloom.core.designsystem.defaultLogDate(at(0, 30), zone, today))
+        assertEquals(today.minusDays(1), be.lain.bloom.core.designsystem.defaultLogDate(at(3, 59), zone, today))
+        assertEquals(today, be.lain.bloom.core.designsystem.defaultLogDate(at(4, 0), zone, today))
+        assertEquals(today, be.lain.bloom.core.designsystem.defaultLogDate(at(18, 0), zone, today))
+        // Started late yesterday evening and saved after midnight: still yesterday.
+        assertEquals(today.minusDays(1), be.lain.bloom.core.designsystem.defaultLogDate(today.minusDays(1).atTime(23, 40).atZone(zone).toInstant(), zone, today))
     }
 
     @Test fun repGuideTimeline() {

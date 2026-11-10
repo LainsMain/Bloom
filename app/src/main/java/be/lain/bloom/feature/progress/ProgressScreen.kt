@@ -245,6 +245,7 @@ private fun MeasurementSheet(previous: MeasurementEntity?, onDismiss: () -> Unit
         listOf("Waist", "Hips", "Chest", "Thigh", "Arm").associateWith { mutableStateOf("") }
     }
     fun v(k: String) = fields.getValue(k).value.replace(',', '.').toDoubleOrNull()?.takeIf { it in 10.0..250.0 }
+    var date by remember { mutableStateOf(java.time.LocalDate.now()) }
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheet) {
         Column(Modifier.padding(horizontal = 24.dp).navigationBarsPadding()) {
             Text("Body measurements", style = MaterialTheme.typography.headlineSmall)
@@ -268,11 +269,12 @@ private fun MeasurementSheet(previous: MeasurementEntity?, onDismiss: () -> Unit
                     modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
                 )
             }
-            Spacer(Modifier.height(8.dp))
+            be.lain.bloom.core.designsystem.LogDateRow(date, { date = it }, Modifier.fillMaxWidth())
+            Spacer(Modifier.height(12.dp))
             val any = fields.keys.any { v(it) != null }
             Button(
                 onClick = {
-                    onSave(MeasurementEntity(date = java.time.LocalDate.now(), waistCm = v("Waist"), hipsCm = v("Hips"),
+                    onSave(MeasurementEntity(date = date, waistCm = v("Waist"), hipsCm = v("Hips"),
                         chestCm = v("Chest"), thighCm = v("Thigh"), armCm = v("Arm")))
                     onDismiss()
                 },

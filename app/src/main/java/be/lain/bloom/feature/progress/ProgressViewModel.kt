@@ -171,8 +171,8 @@ class ProgressViewModel @Inject constructor(
 
     fun setRange(r: ChartRange) { range.value = r }
     fun toggleProjection() { projection.value = !projection.value }
-    fun logWeight(kg: Double) = viewModelScope.launch { body.logWeight(kg) }
+    fun logWeight(kg: Double, date: LocalDate) = viewModelScope.launch { body.logWeight(kg, date) }
     fun deleteWeight(id: Long) = viewModelScope.launch { body.deleteWeight(id) }
-    fun logMeasurement(m: MeasurementEntity) = viewModelScope.launch { body.logMeasurement(m.copy(date = LocalDate.now(clock))) }
+    fun logMeasurement(m: MeasurementEntity) = viewModelScope.launch { body.logMeasurement(m) }
     fun deleteMeasurement(id: Long) = viewModelScope.launch { body.deleteMeasurement(id) }
 }

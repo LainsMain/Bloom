@@ -178,7 +178,8 @@ class BodyRepository @Inject constructor(
     fun water(date: LocalDate): Flow<Int> = dao.observeWater(date).map { list -> list.sumOf { it.ml } }
 
     suspend fun logWeight(kg: Double, date: LocalDate = LocalDate.now(clock)): Long {
-        val at = clock.instant()
+        // An earlier day's weigh-in is stamped at 8 am that day (the usual morning weigh-in).
+        val at = if (date == LocalDate.now(clock)) clock.instant() else date.atTime(8, 0).atZone(clock.zone).toInstant()
         val id = dao.insertWeight(WeightEntryEntity(date = date, at = at, kg = kg))
         runCatching { health.get().writeWeight(kg, at) }
         return id

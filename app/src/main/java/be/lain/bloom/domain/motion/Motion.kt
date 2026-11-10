@@ -39,7 +39,12 @@ enum class MotionStyle {
 }
 
 /** The rhythm of an exercise — independent of the figure, so the workout engine can use it alone. */
-class Tempo(val style: MotionStyle, val beats: List<Beat>) {
+class Tempo(
+    val style: MotionStyle,
+    val beats: List<Beat>,
+    /** Timed loops that change direction halfway (circles). */
+    val reverseAtHalf: Boolean = false,
+) {
     val cycleSeconds: Double = beats.sumOf { it.seconds }.let { if (it <= 0) 4.0 else it }
     val cycleMs: Long = (cycleSeconds * 1000).toLong()
 
@@ -70,7 +75,7 @@ class Tempo(val style: MotionStyle, val beats: List<Beat>) {
             out = if (i != null) out.toMutableList().also { it[i] = it[i].copy(seconds = d) }
             else out.map { if (it.count) it.copy(seconds = maxOf(it.seconds, d)) else it }
         }
-        return if (out === beats) this else Tempo(style, out)
+        return if (out === beats) this else Tempo(style, out, reverseAtHalf)
     }
 }
 
@@ -169,6 +174,7 @@ sealed interface GuideCue {
     data class Word(val text: String) : GuideCue
     data class Rep(val n: Int, val of: Int) : GuideCue
     data object SwitchSides : GuideCue
+    data object SwitchDirection : GuideCue
     data class Count(val n: Int) : GuideCue
 }
 
@@ -247,5 +253,54 @@ class RepGuide(val tempo: Tempo, val reps: Int, perSide: Boolean) {
 
     companion object {
         const val SWITCH_MS = 5_000L
+    }
+}
+
+/**
+ * The rhythm calls of a timed warm-up loop ("left, right…", "out, in…", circle counts) over a step of
+ * [stepMs]. Calls stay clear of the "Go!" at the start and the 3-2-1 at the end. Loops marked
+ * [Tempo.reverseAtHalf] say "switch direction" halfway and the figure turns round too.
+ */
+class LoopGuide(val tempo: Tempo, val stepMs: Long) {
+    private val half = stepMs / 2
+    val cues: List<TimedCue>
+    /** True when this loop says something (then a plain "halfway" would get in the way). */
+    val speaks: Boolean
+
+    init {
+        val out = mutableListOf<TimedCue>()
+        val cycle = tempo.cycleMs.coerceAtLeast(1)
+        val quietStart = 700L
+        val quietEnd = stepMs - 3_300L
+        fun add(at: Long, cue: GuideCue) { if (at in quietStart..quietEnd) out += TimedCue(at, cue) }
+        fun pass(from: Long, until: Long) {
+            var start = from
+            var n = 1
+            while (start < until) {
+                var t = start
+                for (b in tempo.beats) {
+                    if (t >= until) break
+                    when {
+                        b.count -> add(t, GuideCue.Rep(n, 0))
+                        b.word != null -> add(t, GuideCue.Word(b.word))
+                    }
+                    t += (b.seconds * 1000).toLong()
+                }
+                start += cycle; n++
+            }
+        }
+        if (tempo.reverseAtHalf && stepMs >= 12_000) {
+            pass(0, half)
+            out += TimedCue(half, GuideCue.SwitchDirection)
+            pass(half + 1_200, stepMs)
+        } else pass(0, stepMs)
+        cues = out.sortedBy { it.atMs }
+        speaks = cues.isNotEmpty()
+    }
+
+    /** Where the figure is [elapsedMs] into the step (running backwards after a direction switch). */
+    fun frame(elapsedMs: Long, mirrored: Boolean): GuideFrame {
+        val t = if (tempo.reverseAtHalf && stepMs >= 12_000 && elapsedMs > half) half - (elapsedMs - half) else elapsedMs
+        return GuideFrame(t / 1000.0, mirrored, tempo = tempo)
     }
 }

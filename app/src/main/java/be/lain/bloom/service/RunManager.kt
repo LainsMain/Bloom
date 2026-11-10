@@ -271,14 +271,14 @@ class RunManager @Inject constructor(
     }
 
     /** Saves the finished run. Returns its id. */
-    suspend fun save(rpe: Int?, notes: String): Long? {
+    suspend fun save(rpe: Int?, notes: String, date: java.time.LocalDate? = null): Long? {
         val l = _live.value ?: return null
         val id = l.runId ?: return null
         val run = repo.run(id) ?: return null
         val now = clock.instant()
         repo.updateRun(
             run.copy(
-                endedAt = now, distanceM = l.distanceM, movingSec = (l.activeMs / 1000).toInt(),
+                date = date ?: run.date, endedAt = now, distanceM = l.distanceM, movingSec = (l.activeMs / 1000).toInt(),
                 elapsedSec = ((now.toEpochMilli() - run.startedAt.toEpochMilli()) / 1000).toInt(),
                 elevationGainM = l.elevationGain, kcal = l.kcal, planCompleted = l.planDone, finished = true, rpe = rpe, notes = notes.trim(),
             ),

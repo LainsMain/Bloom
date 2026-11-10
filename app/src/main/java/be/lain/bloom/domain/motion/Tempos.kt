@@ -16,6 +16,8 @@ object Tempos {
     private fun reps(vararg beats: Beat) = Tempo(REPS, beats.toList())
     private fun alt(vararg beats: Beat) = Tempo(ALTERNATING, beats.toList())
     private fun loop(vararg beats: Beat) = Tempo(LOOP, beats.toList())
+    private fun circles(vararg beats: Beat) = Tempo(LOOP, beats.toList(), reverseAtHalf = true)
+    private fun c(to: String, s: Double) = Beat(to, s, count = true, ease = Ease.LINEAR)
     private val hold = Tempo(HOLD, emptyList())
 
     /** Lower slowly, come up with intent, short reset at the top. */
@@ -36,12 +38,12 @@ object Tempos {
 
     val all: Map<String, Tempo> = mapOf(
         // Warm-up (timed loops)
-        "march-in-place" to loop(b("knee", 0.45), b("start", 0.45), b("knee", 0.45, mirror = true), b("start", 0.45)),
-        "step-jacks" to loop(b("lift", 0.3), b("out", 0.4), b("lift", 0.3), b("start", 0.4), b("lift", 0.3, mirror = true), b("out", 0.4, mirror = true), b("lift", 0.3, mirror = true), b("start", 0.4)),
-        "hip-circles" to loop(b("left", 0.75, ease = Ease.LINEAR), b("back", 0.75, ease = Ease.LINEAR), b("right", 0.75, ease = Ease.LINEAR), b("start", 0.75, ease = Ease.LINEAR)),
-        "cat-cow" to loop(b("cat", 1.8), b("cat", 0.4), b("cow", 2.2), b("cow", 0.4), b("start", 0.8)),
-        "arm-circles" to loop(b("front", 0.4, ease = Ease.LINEAR), b("up", 0.4, ease = Ease.LINEAR), b("back", 0.4, ease = Ease.LINEAR), b("start", 0.4, ease = Ease.LINEAR)),
-        "leg-swings" to loop(b("front", 0.65), b("back", 0.75), b("start", 0.4)),
+        "march-in-place" to loop(b("knee", 0.45, "left"), b("start", 0.45), b("knee", 0.45, "right", mirror = true), b("start", 0.45)),
+        "step-jacks" to loop(b("lift", 0.3, "out"), b("out", 0.4), b("lift", 0.3, "in"), b("start", 0.4), b("lift", 0.3, "out", mirror = true), b("out", 0.4, mirror = true), b("lift", 0.3, "in", mirror = true), b("start", 0.4)),
+        "hip-circles" to circles(c("left", 0.75), b("back", 0.75, ease = Ease.LINEAR), b("right", 0.75, ease = Ease.LINEAR), b("start", 0.75, ease = Ease.LINEAR)),
+        "cat-cow" to loop(b("cat", 1.8, "cat"), b("cat", 0.4), b("cow", 2.2, "cow"), b("cow", 0.4), b("start", 0.8)),
+        "arm-circles" to circles(c("front", 0.4), b("up", 0.4, ease = Ease.LINEAR), b("back", 0.4, ease = Ease.LINEAR), b("start", 0.4, ease = Ease.LINEAR)),
+        "leg-swings" to loop(b("front", 0.65, "forward"), b("back", 0.75, "back"), b("start", 0.4)),
 
         // Lower body
         "box-squat" to reps(b("bottom", 1.8, "down"), b("bottom", 0.3), b("start", 1.0, "up"), n("start", 0.7)),

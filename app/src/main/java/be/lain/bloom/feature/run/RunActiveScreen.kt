@@ -92,8 +92,8 @@ class RunActiveViewModel @AssistedInject constructor(
         if (manager.live.value == null) manager.prepare(key.title, key.planKey, repo.resolve(key.planKey))
     }
 
-    fun save(rpe: Int?, notes: String, onSaved: (Long) -> Unit) = viewModelScope.launch {
-        manager.save(rpe, notes)?.let { messages.show("Run saved — you're doing brilliantly 🏃"); onSaved(it) }
+    fun save(rpe: Int?, notes: String, date: java.time.LocalDate, onSaved: (Long) -> Unit) = viewModelScope.launch {
+        manager.save(rpe, notes, date)?.let { messages.show("Run saved — you're doing brilliantly 🏃"); onSaved(it) }
     }
 }
 
@@ -127,7 +127,7 @@ fun RunActiveScreen(
     }
     val l = live ?: return
     when (l.status) {
-        RunStatus.FINISHED -> RunSummary(l, onSave = { rpe, notes -> vm.save(rpe, notes) { id -> replace(Route.RunDetail(id)) } },
+        RunStatus.FINISHED -> RunSummary(l, onSave = { rpe, notes, date -> vm.save(rpe, notes, date) { id -> replace(Route.RunDetail(id)) } },
             onDiscard = { vm.manager.discard(); onBack() })
         else -> LiveRunContent(l, vm.manager, onBack)
     }
@@ -257,8 +257,9 @@ private fun SegmentBanner(l: LiveRun) {
 }
 
 @Composable
-private fun RunSummary(l: LiveRun, onSave: (Int?, String) -> Unit, onDiscard: () -> Unit) {
+private fun RunSummary(l: LiveRun, onSave: (Int?, String, java.time.LocalDate) -> Unit, onDiscard: () -> Unit) {
     var rpe by remember { mutableFloatStateOf(5f) }
+    var date by remember { mutableStateOf(be.lain.bloom.core.designsystem.defaultLogDate(java.time.Instant.now().minusMillis(l.activeMs))) }
     var notes by remember { mutableStateOf("") }
     var saving by remember { mutableStateOf(false) }
     var confirmDiscard by remember { mutableStateOf(false) }
@@ -280,8 +281,9 @@ private fun RunSummary(l: LiveRun, onSave: (Int?, String) -> Unit, onDiscard: ()
         Text("How hard did it feel? ${rpe.roundToInt()}/10", style = MaterialTheme.typography.titleMedium)
         Slider(rpe, { rpe = it }, valueRange = 1f..10f, steps = 8)
         OutlinedTextField(notes, { notes = it }, label = { Text("Notes (optional)") }, modifier = Modifier.fillMaxWidth())
+        be.lain.bloom.core.designsystem.LogDateRow(date, { date = it }, Modifier.fillMaxWidth())
         Button(
-            onClick = { saving = true; onSave(rpe.roundToInt(), notes) }, enabled = !saving, shapes = ButtonDefaults.shapes(),
+            onClick = { saving = true; onSave(rpe.roundToInt(), notes, date) }, enabled = !saving, shapes = ButtonDefaults.shapes(),
             modifier = Modifier.fillMaxWidth().height(ButtonDefaults.MediumContainerHeight),
         ) { Text("Save run", style = ButtonDefaults.textStyleFor(ButtonDefaults.MediumContainerHeight)) }
         TextButton(onClick = { confirmDiscard = true }, modifier = Modifier.align(Alignment.CenterHorizontally)) { Text("Discard") }

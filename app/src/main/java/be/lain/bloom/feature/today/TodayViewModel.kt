@@ -155,7 +155,7 @@ class TodayViewModel @Inject constructor(
         date.value = LocalDate.now(clock)
     }
 
-    fun logWeight(kg: Double) = viewModelScope.launch { body.logWeight(kg) }
+    fun logWeight(kg: Double, date: LocalDate) = viewModelScope.launch { body.logWeight(kg, date) }
     fun addWater(ml: Int) = viewModelScope.launch { body.addWater(ml) }
     fun undoWater() = viewModelScope.launch { body.undoWater() }
 }

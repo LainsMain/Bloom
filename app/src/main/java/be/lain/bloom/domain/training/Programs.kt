@@ -5,7 +5,7 @@ import be.lain.bloom.domain.training.Program.p
 import be.lain.bloom.domain.training.Program.t
 import be.lain.bloom.domain.training.Program.warmup
 
-/** All strength programs. Every exercise comes from the library, so each has cues and a demo video. */
+/** All strength programs. Every exercise comes from the library, so each has cues and a 3-D demo. */
 object Programs {
     private fun main(vararg items: Prescription) = Block(BlockKind.MAIN, items.toList())
     private fun core(vararg items: Prescription) = Block(BlockKind.CORE, items.toList())
@@ -23,6 +23,44 @@ object Programs {
     private val stretchCooldown = Block(BlockKind.COOLDOWN, listOf(
         t("hamstring-stretch", 1, 25, rest = 0), t("hip-flexor-stretch", 1, 25, rest = 0), t("childs-pose", 1, 40, rest = 0),
     ))
+
+    /** The gentlest way in: three short full-body sessions a week before moving to a longer program. */
+    val starter15 = TrainingProgram(
+        id = "starter-15",
+        name = "Starter 15",
+        tagline = "Start here: 15 minutes, three times a week",
+        description = "Your first six weeks: three full-body sessions a week of about 15 minutes. Two easy sets of each move with short rests, so the habit sticks before the workouts get longer. Then move on to Feminine Shape or Glute Builder.",
+        level = "Complete beginner",
+        sessionsPerWeek = 3,
+        focus = listOf("Full body", "Short", "Habit"),
+        equipment = "A chair, a wall, a doorframe and a kitchen counter",
+        phases = listOf(
+            Phase(0, "First steps", 3, "Two easy sets of four moves. Finish feeling like you could do more — that's the point.", listOf(
+                Session("A", "Starter A", "Chair squat · wall push-up · bridge · core", listOf(
+                    quickWarmup,
+                    main(p("box-squat", 2, 8, 10, rest = 30), p("wall-pushup", 2, 8, 10, rest = 30), p("glute-bridge", 2, 10, 12, rest = 30)),
+                    core(p("dead-bug", 2, 5, 6, rest = 30)), quickCooldown,
+                )),
+                Session("B", "Starter B", "Sumo squat · row · side glutes · core", listOf(
+                    quickWarmup,
+                    main(p("sumo-squat", 2, 8, 10, rest = 30), p("doorway-row", 2, 8, 10, rest = 30), p("side-lying-leg-raise", 2, 10, 12, rest = 20)),
+                    core(t("knee-plank", 2, 15, rest = 30)), quickCooldown,
+                )),
+            )),
+            Phase(1, "Building", 3, "Slightly harder versions, same short sessions. When these feel easy, switch to Feminine Shape or Glute Builder.", listOf(
+                Session("A", "Starter A", "Squat · incline push-up · bridge march · core", listOf(
+                    quickWarmup,
+                    main(p("bodyweight-squat", 2, 10, 12, rest = 30), p("incline-pushup", 2, 8, 10, rest = 30), p("glute-bridge-march", 2, 6, 8, rest = 30)),
+                    core(p("bird-dog", 2, 5, 6, rest = 30)), quickCooldown,
+                )),
+                Session("B", "Starter B", "Lunge · row · clamshell · core", listOf(
+                    quickWarmup,
+                    main(p("reverse-lunge", 2, 6, 8, rest = 30), p("doorway-row", 2, 10, 12, rest = 30), p("clamshell", 2, 10, 12, rest = 20)),
+                    core(t("plank", 2, 20, rest = 30)), quickCooldown,
+                )),
+            )),
+        ),
+    )
 
     val gluteBuilder = TrainingProgram(
         id = "glute-builder",
@@ -270,7 +308,7 @@ object Programs {
         ),
     )
 
-    val all: List<TrainingProgram> = listOf(Program.program, gluteBuilder, quick15, corePosture, gentleStart, fullBody)
+    val all: List<TrainingProgram> = listOf(starter15, Program.program, gluteBuilder, quick15, corePosture, gentleStart, fullBody)
 
     fun byId(id: String?): TrainingProgram = all.firstOrNull { it.id == id } ?: Program.program
 }

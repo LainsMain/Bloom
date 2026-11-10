@@ -26,10 +26,11 @@ import androidx.compose.ui.unit.dp
 import be.lain.bloom.core.designsystem.NumberStepper
 
 @Composable
-fun LogWeightSheet(initialKg: Double, onDismiss: () -> Unit, onSave: (Double) -> Unit) {
+fun LogWeightSheet(initialKg: Double, onDismiss: () -> Unit, onSave: (Double, java.time.LocalDate) -> Unit) {
     val sheet = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val haptics = LocalHapticFeedback.current
     var kg by remember { mutableDoubleStateOf(initialKg) }
+    var date by remember { androidx.compose.runtime.mutableStateOf(java.time.LocalDate.now()) }
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheet) {
         Column(
             Modifier.fillMaxWidth().padding(horizontal = 24.dp).navigationBarsPadding(),
@@ -48,11 +49,13 @@ fun LogWeightSheet(initialKg: Double, onDismiss: () -> Unit, onSave: (Double) ->
                 value = kg, onValueChange = { kg = it }, unit = "kg", step = 0.1, decimals = 1, min = 30.0, max = 300.0,
                 label = null,
             )
-            Spacer(Modifier.height(28.dp))
+            Spacer(Modifier.height(20.dp))
+            be.lain.bloom.core.designsystem.LogDateRow(date, { date = it }, Modifier.fillMaxWidth())
+            Spacer(Modifier.height(20.dp))
             Button(
                 onClick = {
                     haptics.performHapticFeedback(HapticFeedbackType.Confirm)
-                    onSave(kg)
+                    onSave(kg, date)
                     onDismiss()
                 },
                 shapes = ButtonDefaults.shapes(),

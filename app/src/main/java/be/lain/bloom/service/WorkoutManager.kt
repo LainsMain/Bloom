@@ -126,8 +126,9 @@ class WorkoutManager @Inject constructor(
                 Cue.Go -> { speaker.word("go"); speaker.buzz(Buzz.START) }
                 is Cue.Guide -> when (val g = c.cue) {
                     is GuideCue.Word -> speaker.word(g.text)
-                    is GuideCue.Rep -> { speaker.word("${g.n}"); speaker.buzz(Buzz.TICK) }
+                    is GuideCue.Rep -> { speaker.word("${g.n}"); if (g.of > 0) speaker.buzz(Buzz.TICK) }
                     GuideCue.SwitchSides -> { speaker.word("switch sides"); speaker.buzz(Buzz.START) }
+                    GuideCue.SwitchDirection -> { speaker.word("switch direction"); speaker.buzz(Buzz.TICK) }
                     is GuideCue.Count -> { speaker.word("${g.n}"); speaker.buzz(Buzz.TICK) }
                 }
                 is Cue.Upcoming -> speaker.speak(WorkoutSpeech.upcoming(c.step))
@@ -140,7 +141,7 @@ class WorkoutManager @Inject constructor(
     fun activeSeconds(): Int = (engine.activeMs() / 1000).toInt()
 
     /** Saves the finished workout and clears the session. Returns the new workout id. */
-    suspend fun save(rpe: Int?, notes: String): Long? {
+    suspend fun save(rpe: Int?, notes: String, date: LocalDate = LocalDate.now(clock)): Long? {
         val a = _active.value ?: return null
         val p = a.player
         val work = p.steps.withIndex().filter { it.value.type == StepType.WORK && it.value.block.let { b -> b.name == "MAIN" || b.name == "CORE" } }
@@ -149,7 +150,7 @@ class WorkoutManager @Inject constructor(
         val seconds = activeSeconds()
         val id = training.saveWorkout(
             WorkoutSessionEntity(
-                date = LocalDate.now(clock), startedAt = a.startedAt, endedAt = clock.instant(), phase = a.phase,
+                date = date, startedAt = a.startedAt, endedAt = clock.instant(), phase = a.phase,
                 sessionId = a.session.id, name = a.session.name, activeSeconds = seconds,
                 kcal = Progression.kcal(weight, seconds / 60.0), setsDone = done, setsPlanned = work.size, rpe = rpe, notes = notes.trim(),
                 programId = a.program.id,
