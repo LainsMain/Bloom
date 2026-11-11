@@ -8,6 +8,8 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.ui.unit.dp
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
@@ -82,6 +84,7 @@ class RootViewModel @Inject constructor(
     val deepLinks: be.lain.bloom.service.DeepLinks,
     val updater: be.lain.bloom.data.update.Updater,
     private val milestones: be.lain.bloom.data.MilestoneWatcher,
+    val activeDay: be.lain.bloom.core.ActiveDay,
 ) : ViewModel() {
     val celebration = milestones.pending.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
     fun dismissCelebration() = viewModelScope.launch { milestones.dismiss() }
@@ -99,7 +102,7 @@ fun BloomRoot(vm: RootViewModel = hiltViewModel()) {
             RootState.LOADING -> Unit
             RootState.ONBOARDING -> OnboardingScreen()
             RootState.READY -> {
-                MainShell(vm.messages, vm.deepLinks)
+                MainShell(vm.messages, vm.deepLinks, vm.activeDay)
                 UpdateDialog(vm.updater)
                 val celebrate by vm.celebration.collectAsStateWithLifecycle()
                 celebrate?.let { Celebration(it, onDone = vm::dismissCelebration) }
@@ -114,7 +117,9 @@ private fun NavBackStack<NavKey>.switchTo(route: Route) {
 }
 
 @Composable
-fun MainShell(messages: AppMessages, deepLinks: be.lain.bloom.service.DeepLinks) {
+fun MainShell(messages: AppMessages, deepLinks: be.lain.bloom.service.DeepLinks, activeDay: be.lain.bloom.core.ActiveDay) {
+    val day by activeDay.date.collectAsStateWithLifecycle()
+    val otherDay by activeDay.isOtherDay.collectAsStateWithLifecycle()
     val backStack = rememberNavBackStack(Route.Today)
     val haptics = LocalHapticFeedback.current
     val current = backStack.lastOrNull()
@@ -164,6 +169,8 @@ fun MainShell(messages: AppMessages, deepLinks: be.lain.bloom.service.DeepLinks)
                 enter = slideInVertically { it },
                 exit = slideOutVertically { it },
             ) {
+                androidx.compose.foundation.layout.Column {
+                    if (otherDay) OtherDayBanner(day, onToday = { haptics.performHapticFeedback(HapticFeedbackType.Confirm); activeDay.backToToday() })
                 ShortNavigationBar {
                     Tab.entries.forEach { tab ->
                         val selected = tab == currentTab
@@ -179,6 +186,7 @@ fun MainShell(messages: AppMessages, deepLinks: be.lain.bloom.service.DeepLinks)
                             label = { Text(tab.label) },
                         )
                     }
+                }
                 }
             }
         },
@@ -228,5 +236,34 @@ fun MainShell(messages: AppMessages, deepLinks: be.lain.bloom.service.DeepLinks)
                 entry<Route.ReviewDetail> { key -> be.lain.bloom.feature.review.ReviewDetailScreen(key, onBack = back) }
             },
         )
+    }
+}
+
+/** Shown above the tabs while the app works on a day other than today. */
+@Composable
+private fun OtherDayBanner(day: java.time.LocalDate, onToday: () -> Unit) {
+    val today = java.time.LocalDate.now()
+    val label = when (day) {
+        today.minusDays(1) -> "yesterday"
+        today.plusDays(1) -> "tomorrow"
+        else -> day.format(java.time.format.DateTimeFormatter.ofPattern("EEEE d MMMM", java.util.Locale.UK))
+    }
+    Surface(color = MaterialTheme.colorScheme.tertiaryContainer, modifier = Modifier.fillMaxWidth()) {
+        androidx.compose.foundation.layout.Row(
+            Modifier.padding(start = 16.dp, end = 8.dp, top = 2.dp, bottom = 2.dp),
+            verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+        ) {
+            Text(
+                "You're on $label — everything you log counts for that day",
+                style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onTertiaryContainer,
+                modifier = Modifier.weight(1f),
+            )
+            androidx.compose.material3.FilledTonalButton(
+                onClick = onToday,
+                colors = androidx.compose.material3.ButtonDefaults.filledTonalButtonColors(
+                    containerColor = MaterialTheme.colorScheme.tertiary, contentColor = MaterialTheme.colorScheme.onTertiary,
+                ),
+            ) { Text("Back to today") }
+        }
     }
 }

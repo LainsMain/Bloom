@@ -57,11 +57,17 @@ data class TodayState(
     val training: TrainingKind = TrainingKind.REST,
     val nextTraining: Pair<DayOfWeek, TrainingKind>? = null,
 ) {
+    val isToday: Boolean get() = date == LocalDate.now()
     val greeting: String
-        get() = when (LocalTime.now().hour) {
-            in 5..11 -> "Good morning"
-            in 12..17 -> "Good afternoon"
-            else -> "Good evening"
+        get() = when {
+            date == LocalDate.now().minusDays(1) -> "Yesterday"
+            date == LocalDate.now().plusDays(1) -> "Tomorrow"
+            !isToday -> date.dayOfWeek.getDisplayName(java.time.format.TextStyle.FULL, java.util.Locale.UK)
+            else -> when (LocalTime.now().hour) {
+                in 5..11 -> "Good morning"
+                in 12..17 -> "Good afternoon"
+                else -> "Good evening"
+            }
         }
 }
 
@@ -86,8 +92,10 @@ class TodayViewModel @Inject constructor(
     private val messages: be.lain.bloom.core.AppMessages,
     settings: SettingsRepository,
     private val clock: Clock,
+    private val activeDay: be.lain.bloom.core.ActiveDay,
 ) : ViewModel() {
-    private val date = MutableStateFlow(LocalDate.now(clock))
+    /** The day Today shows: today, or the day picked here or in the food diary. */
+    private val date = activeDay.date
 
     val state: StateFlow<TodayState> = date.flatMapLatest { day ->
         combine(
@@ -151,11 +159,12 @@ class TodayViewModel @Inject constructor(
 
     fun defaultMeal(): Meal = food.defaultMeal()
 
-    fun refreshDate() {
-        date.value = LocalDate.now(clock)
-    }
+    fun refreshDate() = activeDay.refresh()
+    fun previousDay() = activeDay.shift(-1)
+    fun nextDay() = activeDay.shift(1)
+    fun backToToday() = activeDay.backToToday()
 
     fun logWeight(kg: Double, date: LocalDate) = viewModelScope.launch { body.logWeight(kg, date) }
-    fun addWater(ml: Int) = viewModelScope.launch { body.addWater(ml) }
-    fun undoWater() = viewModelScope.launch { body.undoWater() }
+    fun addWater(ml: Int) = viewModelScope.launch { body.addWater(ml, date.value) }
+    fun undoWater() = viewModelScope.launch { body.undoWater(date.value) }
 }

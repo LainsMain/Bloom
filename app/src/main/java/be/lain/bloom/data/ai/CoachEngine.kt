@@ -65,6 +65,7 @@ enum class ChatMode(val kind: String) { COACH("coach"), QUICK_LOG("quicklog"), R
 
 @Singleton
 class CoachEngine @Inject constructor(
+    private val activeDay: be.lain.bloom.core.ActiveDay,
     @ApplicationContext private val context: Context,
     private val db: BloomDatabase,
     private val deepSeek: DeepSeek,
@@ -155,7 +156,7 @@ class CoachEngine @Inject constructor(
                     }
                     db.chatDao().updateChat(c.copy(title = title, updatedAt = now))
                 }
-                runLoop(chatId, mode, ToolDefaultsFor(date ?: LocalDate.now(clock), defaultMeal))
+                runLoop(chatId, mode, ToolDefaultsFor(date ?: activeDay.current(), defaultMeal))
                 update(chatId) { RunState() }
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
@@ -171,7 +172,7 @@ class CoachEngine @Inject constructor(
         update(chatId) { RunState(busy = true) }
         jobs[chatId] = scope.launch {
             try {
-                runLoop(chatId, mode, ToolDefaultsFor(date ?: LocalDate.now(clock), defaultMeal))
+                runLoop(chatId, mode, ToolDefaultsFor(date ?: activeDay.current(), defaultMeal))
                 update(chatId) { RunState() }
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e

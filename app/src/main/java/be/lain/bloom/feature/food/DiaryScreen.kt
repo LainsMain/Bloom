@@ -95,8 +95,10 @@ class DiaryViewModel @Inject constructor(
     private val repo: FoodRepository,
     profiles: ProfileRepository,
     private val messages: AppMessages,
+    private val activeDay: be.lain.bloom.core.ActiveDay,
 ) : ViewModel() {
-    private val date = MutableStateFlow(repo.today())
+    /** Picking a day here switches the whole app to it (see ActiveDay). */
+    private val date = activeDay.date
 
     val state = date.flatMapLatest { d ->
         val monday = d.minusDays((d.dayOfWeek.value - 1).toLong())
@@ -107,7 +109,7 @@ class DiaryViewModel @Inject constructor(
         }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), DiaryState())
 
-    fun select(d: LocalDate) { date.value = d }
+    fun select(d: LocalDate) = activeDay.select(d)
 
     fun delete(e: DiaryEntryEntity) = viewModelScope.launch {
         repo.deleteEntry(e.id)

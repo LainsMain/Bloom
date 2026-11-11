@@ -19,6 +19,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.DirectionsRun
 import androidx.compose.material.icons.automirrored.rounded.Undo
+import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowLeft
+import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.rounded.DirectionsWalk
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.CheckCircle
@@ -98,6 +100,8 @@ fun TodayScreen(navigate: (Route) -> Unit, openTab: (Route) -> Unit, vm: TodayVi
                     name = state.profile?.name.orEmpty(),
                     date = state.date.long(),
                     onAvatar = { navigate(Route.Settings) },
+                    isToday = state.isToday,
+                    onPrev = vm::previousDay, onNext = vm::nextDay, onToday = vm::backToToday,
                 )
             }
             item {
@@ -115,7 +119,7 @@ fun TodayScreen(navigate: (Route) -> Unit, openTab: (Route) -> Unit, vm: TodayVi
                 val left = (t?.proteinG ?: 0) - (state.protein ?: 0.0)
                 // From late morning, once there's a real gap; never nag first thing.
                 if (t != null && left >= 15 && java.time.LocalTime.now().hour >= 11) {
-                    ProteinCard(state.protein ?: 0.0, t.proteinG, ideas, onAdd = vm::logProtein, onMore = {
+                    ProteinCard(state.protein ?: 0.0, t.proteinG, ideas, isToday = state.isToday, onAdd = vm::logProtein, onMore = {
                         navigate(Route.FoodSearch(state.date.toEpochDay(), vm.defaultMeal()))
                     })
                 }
@@ -198,20 +202,34 @@ fun TodayScreen(navigate: (Route) -> Unit, openTab: (Route) -> Unit, vm: TodayVi
             initialKg = state.latestWeight?.kg ?: state.profile?.startWeightKg ?: 70.0,
             onDismiss = { weightSheet = false },
             onSave = vm::logWeight,
+            defaultDate = state.date,
         )
     }
 }
 
 @Composable
-private fun Header(greeting: String, name: String, date: String, onAvatar: () -> Unit) {
+private fun Header(
+    greeting: String, name: String, date: String, onAvatar: () -> Unit,
+    isToday: Boolean = true, onPrev: () -> Unit = {}, onNext: () -> Unit = {}, onToday: () -> Unit = {},
+) {
     Row(
         Modifier.fillMaxWidth().statusBarsPadding().padding(top = 8.dp, bottom = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(Modifier.weight(1f)) {
-            Text(date, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+            // ‹ date ›: step to another day; the whole app follows (see ActiveDay).
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                androidx.compose.material3.IconButton(onClick = onPrev, modifier = Modifier.size(32.dp)) {
+                    androidx.compose.material3.Icon(androidx.compose.material.icons.Icons.AutoMirrored.Rounded.KeyboardArrowLeft, "Previous day")
+                }
+                Text(date, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+                androidx.compose.material3.IconButton(onClick = onNext, modifier = Modifier.size(32.dp)) {
+                    androidx.compose.material3.Icon(androidx.compose.material.icons.Icons.AutoMirrored.Rounded.KeyboardArrowRight, "Next day")
+                }
+                if (!isToday) androidx.compose.material3.TextButton(onClick = onToday) { Text("Back to today") }
+            }
             Text(
-                if (name.isBlank()) greeting else "$greeting,\n$name",
+                if (name.isBlank() || !isToday) greeting else "$greeting,\n$name",
                 style = MaterialTheme.typography.headlineMedium,
             )
         }
@@ -233,7 +251,7 @@ private fun Header(greeting: String, name: String, date: String, onAvatar: () ->
 }
 
 @Composable
-private fun ProteinCard(eaten: Double, target: Int, ideas: List<be.lain.bloom.data.food.ProteinIdea>, onAdd: (be.lain.bloom.data.food.ProteinIdea) -> Unit, onMore: () -> Unit) {
+private fun ProteinCard(eaten: Double, target: Int, ideas: List<be.lain.bloom.data.food.ProteinIdea>, isToday: Boolean, onAdd: (be.lain.bloom.data.food.ProteinIdea) -> Unit, onMore: () -> Unit) {
     val left = (target - eaten).coerceAtLeast(0.0)
     val color = MaterialTheme.dataColors.protein
     BloomCard(Modifier.fillMaxWidth(), contentPadding = 16.dp) {
@@ -244,7 +262,7 @@ private fun ProteinCard(eaten: Double, target: Int, ideas: List<be.lain.bloom.da
             Text("${eaten.toInt()} / $target g", style = MaterialTheme.typography.labelLarge)
         }
         Spacer(Modifier.height(4.dp))
-        Text("About ${left.toInt()} g to go today", style = MaterialTheme.typography.titleMedium)
+        Text("About ${left.toInt()} g to go" + if (isToday) " today" else " that day", style = MaterialTheme.typography.titleMedium)
         Text("Protein keeps you full and protects muscle while you lose fat.", style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant)
         Spacer(Modifier.height(10.dp))

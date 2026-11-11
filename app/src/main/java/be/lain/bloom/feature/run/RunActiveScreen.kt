@@ -83,8 +83,13 @@ class RunActiveViewModel @AssistedInject constructor(
     val manager: RunManager,
     private val repo: RunRepository,
     private val messages: AppMessages,
+    private val activeDay: be.lain.bloom.core.ActiveDay,
 ) : ViewModel() {
     @AssistedFactory interface Factory { fun create(key: Route.RunActive): RunActiveViewModel }
+
+    /** The day a finished run counts for: the picked day, or yesterday for a run started after midnight. */
+    fun defaultDate(startedAt: java.time.Instant): java.time.LocalDate =
+        if (activeDay.isOtherDay.value) activeDay.current() else be.lain.bloom.core.designsystem.defaultLogDate(startedAt)
 
     val live = manager.live
 
@@ -127,7 +132,7 @@ fun RunActiveScreen(
     }
     val l = live ?: return
     when (l.status) {
-        RunStatus.FINISHED -> RunSummary(l, onSave = { rpe, notes, date -> vm.save(rpe, notes, date) { id -> replace(Route.RunDetail(id)) } },
+        RunStatus.FINISHED -> RunSummary(l, defaultDate = vm::defaultDate, onSave = { rpe, notes, date -> vm.save(rpe, notes, date) { id -> replace(Route.RunDetail(id)) } },
             onDiscard = { vm.manager.discard(); onBack() })
         else -> LiveRunContent(l, vm.manager, onBack)
     }
@@ -257,9 +262,9 @@ private fun SegmentBanner(l: LiveRun) {
 }
 
 @Composable
-private fun RunSummary(l: LiveRun, onSave: (Int?, String, java.time.LocalDate) -> Unit, onDiscard: () -> Unit) {
+private fun RunSummary(l: LiveRun, defaultDate: (java.time.Instant) -> java.time.LocalDate, onSave: (Int?, String, java.time.LocalDate) -> Unit, onDiscard: () -> Unit) {
     var rpe by remember { mutableFloatStateOf(5f) }
-    var date by remember { mutableStateOf(be.lain.bloom.core.designsystem.defaultLogDate(java.time.Instant.now().minusMillis(l.activeMs))) }
+    var date by remember { mutableStateOf(defaultDate(java.time.Instant.now().minusMillis(l.activeMs))) }
     var notes by remember { mutableStateOf("") }
     var saving by remember { mutableStateOf(false) }
     var confirmDiscard by remember { mutableStateOf(false) }

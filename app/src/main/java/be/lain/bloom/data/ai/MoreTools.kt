@@ -63,6 +63,7 @@ import kotlin.math.roundToInt
  */
 @Singleton
 class MoreTools @Inject constructor(
+    private val activeDay: be.lain.bloom.core.ActiveDay,
     private val db: BloomDatabase,
     private val food: FoodRepository,
     private val body: BodyRepository,
@@ -306,7 +307,7 @@ class MoreTools @Inject constructor(
 
     private suspend fun logSymptoms(chatId: Long, a: JsonObject, journal: Journal): String {
         cycleOff()?.let { return it }
-        val date = a.date("date") ?: today()
+        val date = a.date("date") ?: activeDay.current()
         val set = be.lain.bloom.data.cycle.Symptom.parse(a.s("symptoms").lowercase().replace(' ', '_').replace(",_", ","))
         val before = snapshot(listOf(date))
         cycle.setSymptoms(date, set)
@@ -457,7 +458,7 @@ class MoreTools @Inject constructor(
     private suspend fun logWorkout(chatId: Long, a: JsonObject, journal: Journal): String {
         val minutes = a.d("minutes")?.roundToInt()?.coerceIn(1, 300) ?: return err("minutes required")
         val items = a["exercises"] as? JsonArray ?: return err("exercises required")
-        val date = a.date("date") ?: today()
+        val date = a.date("date") ?: activeDay.current()
         val st = training.status.first()
         val sessionId = a.s("session").uppercase().takeIf { id -> st.phase.sessions.any { it.id == id } }
         val session = sessionId?.let { id -> st.phase.sessions.first { it.id == id } }
@@ -506,7 +507,7 @@ class MoreTools @Inject constructor(
 
     private suspend fun logRun(chatId: Long, a: JsonObject, journal: Journal): String {
         val minutes = a.d("minutes")?.takeIf { it > 0 } ?: return err("minutes required")
-        val date = a.date("date") ?: today()
+        val date = a.date("date") ?: activeDay.current()
         val km = a.d("distance_km")?.takeIf { it in 0.0..100.0 } ?: 0.0
         val sec = (minutes * 60).roundToInt()
         val weight = Trend.at(body.weights.first().map { WeightPoint(it.date, it.kg) }, date) ?: profiles.profile.first()?.startWeightKg ?: 70.0
@@ -528,7 +529,7 @@ class MoreTools @Inject constructor(
 
     private suspend fun logMeasurements(chatId: Long, a: JsonObject, journal: Journal): String {
         fun v(k: String) = a.d(k)?.takeIf { it in 20.0..250.0 }
-        val m = MeasurementEntity(date = a.date("date") ?: today(), waistCm = v("waist"), hipsCm = v("hips"), chestCm = v("chest"), thighCm = v("thigh"), armCm = v("arm"))
+        val m = MeasurementEntity(date = a.date("date") ?: activeDay.current(), waistCm = v("waist"), hipsCm = v("hips"), chestCm = v("chest"), thighCm = v("thigh"), armCm = v("arm"))
         if (listOf(m.waistCm, m.hipsCm, m.chestCm, m.thighCm, m.armCm).all { it == null }) return err("Give at least one measurement in cm")
         val id = body.logMeasurement(m)
         val text = listOfNotNull(m.waistCm?.let { "waist $it" }, m.hipsCm?.let { "hips $it" }, m.chestCm?.let { "chest $it" },

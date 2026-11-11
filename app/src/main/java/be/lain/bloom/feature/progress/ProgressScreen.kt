@@ -199,10 +199,11 @@ fun ProgressScreen(navigate: (be.lain.bloom.ui.Route) -> Unit, vm: ProgressViewM
             initialKg = state.weights.firstOrNull()?.kg ?: profile?.startWeightKg ?: 70.0,
             onDismiss = { weightSheet = false },
             onSave = vm::logWeight,
+            defaultDate = vm.activeDate(),
         )
     }
     if (measureSheet) {
-        MeasurementSheet(previous = state.measurements.firstOrNull(), onDismiss = { measureSheet = false }, onSave = vm::logMeasurement)
+        MeasurementSheet(previous = state.measurements.firstOrNull(), onDismiss = { measureSheet = false }, onSave = vm::logMeasurement, defaultDate = vm.activeDate())
     }
 }
 
@@ -239,13 +240,13 @@ private fun MeasurementCard(m: MeasurementEntity, prev: MeasurementEntity?, toda
 }
 
 @Composable
-private fun MeasurementSheet(previous: MeasurementEntity?, onDismiss: () -> Unit, onSave: (MeasurementEntity) -> Unit) {
+private fun MeasurementSheet(previous: MeasurementEntity?, onDismiss: () -> Unit, onSave: (MeasurementEntity) -> Unit, defaultDate: java.time.LocalDate) {
     val sheet = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val fields = remember {
         listOf("Waist", "Hips", "Chest", "Thigh", "Arm").associateWith { mutableStateOf("") }
     }
     fun v(k: String) = fields.getValue(k).value.replace(',', '.').toDoubleOrNull()?.takeIf { it in 10.0..250.0 }
-    var date by remember { mutableStateOf(java.time.LocalDate.now()) }
+    var date by remember { mutableStateOf(defaultDate) }
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheet) {
         Column(Modifier.padding(horizontal = 24.dp).navigationBarsPadding()) {
             Text("Body measurements", style = MaterialTheme.typography.headlineSmall)

@@ -99,8 +99,13 @@ class WorkoutPlayerViewModel @Inject constructor(
     val manager: WorkoutManager,
     private val settings: be.lain.bloom.data.SettingsRepository,
     private val messages: AppMessages,
+    private val activeDay: be.lain.bloom.core.ActiveDay,
 ) : ViewModel() {
     val active = manager.active
+
+    /** The day a finished workout counts for: the picked day, or yesterday for a session started after midnight. */
+    fun defaultDate(startedAt: java.time.Instant): java.time.LocalDate =
+        if (activeDay.isOtherDay.value) activeDay.current() else be.lain.bloom.core.designsystem.defaultLogDate(startedAt)
     val pauseBefore = settings.settings.map { it.pauseBeforeExercise }.stateIn(viewModelScope, SharingStarted.Eagerly, false)
 
     fun setPauseBefore(on: Boolean) = viewModelScope.launch {
@@ -366,7 +371,7 @@ private fun TimerRing(p: PlayerState, size: androidx.compose.ui.unit.Dp = 220.dp
 private fun Summary(vm: WorkoutPlayerViewModel, p: PlayerState, name: String, startedAt: java.time.Instant, onDone: () -> Unit) {
     var rpe by remember { mutableFloatStateOf(6f) }
     // A workout started after midnight (before 4 am) counts for yesterday unless changed.
-    var date by remember { mutableStateOf(be.lain.bloom.core.designsystem.defaultLogDate(startedAt)) }
+    var date by remember { mutableStateOf(vm.defaultDate(startedAt)) }
     var notes by remember { mutableStateOf("") }
     var saving by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()

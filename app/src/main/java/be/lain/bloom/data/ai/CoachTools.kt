@@ -52,6 +52,7 @@ interface TrainingContext {
 
 @Singleton
 class CoachTools @Inject constructor(
+    private val activeDay: be.lain.bloom.core.ActiveDay,
     private val db: BloomDatabase,
     private val food: FoodRepository,
     private val body: BodyRepository,
@@ -414,7 +415,7 @@ class CoachTools @Inject constructor(
     private suspend fun logWeight(chatId: Long, a: JsonObject): String {
         val kg = a.d("kg") ?: return err("kg required")
         if (kg !in 30.0..300.0) return err("Implausible weight")
-        val id = body.logWeight(kg, a.date("date") ?: today())
+        val id = body.logWeight(kg, a.date("date") ?: activeDay.current())
         newAction(chatId, AiActionKind.LOG_WEIGHT, AiActionStatus.APPLIED, "Logged weight ${kg} kg", buildJsonObject { put("weightId", id) })
         return buildJsonObject { put("saved", true) }.toString()
     }

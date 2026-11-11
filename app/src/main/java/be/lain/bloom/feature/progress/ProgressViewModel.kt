@@ -76,7 +76,10 @@ class ProgressViewModel @Inject constructor(
     cycle: be.lain.bloom.data.cycle.CycleRepository,
     milestoneWatcher: be.lain.bloom.data.MilestoneWatcher,
     private val clock: Clock,
+    private val activeDay: be.lain.bloom.core.ActiveDay,
 ) : ViewModel() {
+    /** The day new weigh-ins and measurements count for (today, or the day picked elsewhere). */
+    fun activeDate(): LocalDate = activeDay.current()
     val milestones = milestoneWatcher.state.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
     private val today0 = LocalDate.now(clock)
 

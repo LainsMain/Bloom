@@ -28,6 +28,7 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
     @Inject lateinit var settingsRepository: SettingsRepository
     @Inject lateinit var healthSync: be.lain.bloom.data.health.HealthSync
     @Inject lateinit var deepLinks: be.lain.bloom.service.DeepLinks
+    @Inject lateinit var activeDay: be.lain.bloom.core.ActiveDay
     private var lastSync = 0L
 
     private fun handle(intent: android.content.Intent?) {
@@ -47,12 +48,14 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
         // Read synchronously once so private data never flashes before the lock appears.
         val enabled = lockEnabled ?: kotlinx.coroutines.runBlocking { settingsRepository.settings.first().appLock }.also { lockEnabled = it }
         appLock.onForeground(enabled)
+        activeDay.refresh()
         if (android.os.Build.VERSION.SDK_INT >= 33) setRecentsScreenshotEnabled(!enabled)
     }
 
     override fun onStop() {
         super.onStop()
         appLock.onBackground()
+        activeDay.markSeen()
     }
 
     override fun onResume() {
